@@ -1,0 +1,32 @@
+@startuml
+
+create Site
+create Manager
+create Base
+create Polling1
+
+...
+Base -> Polling1: locks
+activate Polling1
+Polling1 o-> Manager: sync
+Site -> Manager: Lock
+Manager -> Polling1: End(+lock)
+Polling1 -> Base: Lock
+deactivate Polling1
+destroy Polling1
+create Polling2
+Base -> Polling2: new locks
+activate Polling2
+Polling2 o-> Manager: sync
+Manager -> Site: Result
+...
+Base -> Polling2: timeout
+deactivate Polling2
+destroy Base
+create Polling3
+Base -> Polling3: locks
+activate Polling3
+Polling3 o-> Manager: sync
+...
+
+@enduml

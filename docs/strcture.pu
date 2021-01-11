@@ -1,0 +1,87 @@
+@startuml
+
+class Base {
+    baseIdentifer: any - Идентификатор информационной базы,
+    например строка соединения или контанта с уникальным идентификатором
+}
+
+class Session {
+    sessionNumber: int - результат НомерСеансаИнформационнойБазы()
+}
+
+class User {
+    username: string - ИмяПользователя()
+}
+
+Base *-- User
+User *-- Session
+
+abstract Message {
+    type: MessageType - тип сообщения
+    sender: MessagePoint - отправитель
+    target: MessagePoint - получатель
+    data: MessageData - данные сообщения
+}
+
+class MessageParams extends Message {
+    base: идентификатор базы
+    user: ИмяПользователя()
+    session: НомерСеансаИнформационнойБазы()
+}
+
+class MessageDataNotify extends Message {
+    name: имя события
+    param: параметр события
+    source: источник события
+}
+
+class MessageDataNotifyChanged extends Message {
+    type|key:
+}
+
+abstract MessageSession extends Message{
+    base: идентификатор базы 
+    session: сеанс, в котором открываем форму
+}
+
+class MessageGotoURL extends MessageSession {
+    url: строка с навигационной ссылкой
+}
+
+class MessageOpenForm extends MessageSession {
+    formName: строка с именем формы
+    params: json с сериализованной структурой параметров формы
+}
+
+class MessageShowNotification extends MessageSession {
+    text: 
+    url: навигационная ссылка
+    <Пояснение>, <Картинка>, <СтатусОповещенияПользователя>, <КлючУникальности>
+
+    formName: строка с именем формы
+    params: json с сериализованной структурой параметров формы
+}
+
+class MessagePoint {
+    base: обязательно 
+    user: 
+    session: если пусто, то отправляется во все сеансы базы
+}
+
+Message -- MessageType
+Message - MessageData
+
+enum MessageType {
+  Params: установка параметров сокета, \nдолжно идти первым сообщением после соединения
+  Notify: аналог 1сного Оповестить
+  NotifyChanged: аналог ОповеститьОбИзменении
+  GotoURL: аналог ПерейтиПоНавигационнойСсылке
+  OpenForm: аналог ПерейтиПоНавигационнойСсылке
+  BackgroundJobExecutionCompletion
+  BackgroundJobMessage
+  Lock: аналог ЗаблокироватьДанныеДляРедактирования
+  Unlock: аналог РазблокироватьДанныеДляРедактирования
+}
+
+
+@enduml

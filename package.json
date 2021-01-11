@@ -1,0 +1,30 @@
+{
+  "name": "notifysystem",
+  "version": "1.0.0",
+  "description": "Система оповещений для 1с на основе веб сокетов",
+  "main": "index.js",
+  "directories": {
+    "doc": "docs"
+  },
+  "scripts": {
+    "start": "node ./index.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/FragsterAt/notifysystem.git"
+  },
+  "keywords": [
+    "1c",
+    "notify"
+  ],
+  "author": "Fragster",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/FragsterAt/notifysystem/issues"
+  },
+  "homepage": "https://github.com/FragsterAt/notifysystem#readme",
+  "dependencies": {
+    "ws": "^7.3.1"
+  }
+}
