@@ -108,7 +108,7 @@ wss.on('connection', function connection (ws) {
 
     ws.on('close', function () {
         waitParams.delete(ws);
-        ChannelManager.unsubscribeClient(ws)
+        //ChannelManager.unsubscribeClient(ws)
     });
 
     ws.send('wait for params');
