@@ -25,6 +25,7 @@
   },
   "homepage": "https://github.com/FragsterAt/notifysystem#readme",
   "dependencies": {
+    "dotenv": "^8.2.0",
     "ws": "^7.3.1"
   }
 }

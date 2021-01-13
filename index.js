@@ -1,3 +1,4 @@
+require('dotenv').config()
 const WebSocket = require('ws');
 const http = require('http');
 const { REFUSED } = require('dns');
@@ -60,7 +61,7 @@ const waitParams = new Set;
 const lockQuery = [];
 const channels = [];
 
-server.listen(0x1c1c); // 7196
+server.listen(process.env.PORT || 0x1c1c); // 7196
 
 
 wss.on('connection', function connection (ws) {
