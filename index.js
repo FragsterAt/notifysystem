@@ -102,10 +102,10 @@ wss.on('connection', function connection (ws) {
         broadcast(msg.filter, msg.data)
         break
 
-      case 'subscribe':
+      case 'join':
         subscribe(msg.channel, ws)
         break
-      case 'unsubscribe':
+      case 'leave':
         unsubscribe(msg.channel, ws)
         break
 
