@@ -20,7 +20,7 @@ function requestListener (request, response) {
 }
 
 const waitParams = new Set()
-const channels = new Map()
+const channels = []
 
 const stats = {
   messages: 0,
@@ -28,7 +28,7 @@ const stats = {
   requests: {}
 }
 function getStats () {
-  return { ...stats, clients: wss.clients.size }
+  return { ...stats, clients: wss.clients.size, channels: channels.length }
 }
 
 function statusResponse (response) {
@@ -46,7 +46,10 @@ async function processPostMessage (request, response) {
     messages.forEach(msg => {
       switch (msg.type) {
         case 'message':
-          broadcast(params.filter, msg.data, msg.channel)
+        case 'notify-changed':
+        case 'notify-type-changed':
+        case 'notify':
+          broadcast(params.filter, msg.channel, msg.data)
           break
       }
     })
@@ -62,7 +65,6 @@ async function processPostMessage (request, response) {
   }
 }
 
-console.log(process.env.PORT)
 server.listen(process.env.PORT || 0x1c1c) // 7196
 
 wss.on('connection', function connection (ws) {
@@ -81,32 +83,39 @@ wss.on('connection', function connection (ws) {
         if (waitParams.has(ws)) {
           waitParams.delete(ws)
           ws.filter = msg.filter
+          ws.channels = new Set()
           //          ws.listenBroadcast = msg.listenBroadcast === undefined ? true : !!msg.listenBroadcast
           ws.listenBroadcast = msg.listenBroadcast ?? true
+          subscribe(ws, undefined)
         } else {
           ws.send({ type: 'error', data: 'params already set' })
         }
         break
 
       case 'message':
+      case 'notify-changed':
+      case 'notify-type-changed':
+      case 'notify':
         if (!waitParams.has(ws)) {
-          broadcast(msg.filter, msg.data)
+          broadcast(ws.filter, msg.channel, msg.data)
         } else {
           ws.send({ type: 'error', data: 'wait for params' })
         }
         break
 
-      case 'notify-changed':
-      case 'notify-type-changed':
-      case 'notify':
-        broadcast(msg.filter, msg.data)
-        break
-
       case 'join':
-        subscribe(msg.channel, ws)
+        if (!waitParams.has(ws)) {
+          subscribe(ws, msg.channel, msg.data)
+        } else {
+          ws.send({ type: 'error', data: 'wait for params' })
+        }
         break
       case 'leave':
-        unsubscribe(msg.channel, ws)
+        if (!waitParams.has(ws)) {
+          unsubscribe(ws, msg.channel, msg.data)
+        } else {
+          ws.send({ type: 'error', data: 'wait for params' })
+        }
         break
 
       default:
@@ -116,30 +125,39 @@ wss.on('connection', function connection (ws) {
 
   ws.on('close', function () {
     waitParams.delete(ws)
+    ws.channels.forEach(channel => unsubscribe(ws, channel))
     // ChannelManager.unsubscribeClient(ws)
   })
 
   ws.send('wait for params')
 })
 
-function subscribe (channel, ws) {
+function subscribe (ws, channel) {
   const { filter } = ws
-  if (!channels.has({ channel, filter })) { channels.set({ channel, filter }, new Set()) }
-  channels.get({ channel, filter }).add(ws)
+  let channelObj = channels.find(el => el.channel === channel && el.filter === filter)
+  if (!channelObj) {
+    channelObj = { channel, filter, clients: new Set() }
+    channels.push(channelObj)
+  }
+  channelObj.clients.add(ws)
+  ws.channels.add(channel)
 }
 
-function unsubscribe (channel, ws) {
-  const { filter } = ws
-  if (!channels.has({ channel, filter })) { return }
-  const members = channels.get({ channel, filter })
-  members.delete(ws)
-  if (members.size === 0) { channels.delete({ channel, filter }) }
+function unsubscribe (ws, channel) {
+  const channelIndex = channels.findIndex(el => el.channel === channel && el.filter === ws.filter)
+  if (channelIndex === -1) {
+    return
+  }
+  const channelObj = channels[channelIndex]
+  channelObj.clients.delete(ws)
+  ws.channels.delete(channel)
+  if (channelObj.clients.size === 0) { channels.splice(channelIndex, 1) }
 }
 
-function broadcast (filter, data, channel) {
-  wss.clients.forEach(function each (client) {
-    if (client.filter === filter) {
-      client.send(data)
-    }
+function broadcast (filter, channel, data) {
+  const channelObj = channels.find(el => el.channel === channel && el.filter === filter)
+  if (!channelObj) { return }
+  channelObj.clients.forEach(client => {
+    client.send(data)
   })
 }
