@@ -73,7 +73,14 @@ wss.on('connection', function connection (ws) {
   ws.filter = undefined
 
   ws.on('message', function incoming (message) {
-    const msg = JSON.parse(message)
+    let msg
+    try {
+      msg = JSON.parse(message)
+    } catch (error) {
+      console.error(message)
+      ws.send(JSON.stringify({ type: 'error', data: 'Cant parse message' }))
+      return
+    }
     // console.log(new Date(), 'ws', message)
 
     stats.messages++
