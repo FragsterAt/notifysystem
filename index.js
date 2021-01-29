@@ -38,12 +38,15 @@ function statusResponse (response) {
 }
 
 async function processPostMessage (request, response) {
+  let requestBody
   try {
-    const requestBody = await getRequestBody(request)
+    requestBody = await getRequestBody(request)
     // console.log(new Date(), 'post', requestBody)
     const { params, messages } = JSON.parse(requestBody)
 
+    // console.log(new Date(), 'post params', params)
     messages.forEach(msg => {
+      // console.log(new Date(), 'post', msg)
       switch (msg.type) {
         case 'message':
         case 'notify-changed':
@@ -59,7 +62,7 @@ async function processPostMessage (request, response) {
     const status = { status: 'OK' }
     response.end(JSON.stringify(status))
   } catch (error) {
-    console.error(error)
+    console.error(error, requestBody)
     response.writeHead(500)
     response.end(error.message)
   }
@@ -77,11 +80,11 @@ wss.on('connection', function connection (ws) {
     try {
       msg = JSON.parse(message)
     } catch (error) {
-      console.error(message)
+      console.error(error, message)
       ws.send(JSON.stringify({ type: 'error', data: 'Cant parse message' }))
       return
     }
-    // console.log(new Date(), 'ws', message)
+    // console.log(new Date(), 'ws', msg.type, msg)
 
     stats.messages++
     if (stats.messagesByType[msg.type] === undefined) { stats.messagesByType[msg.type] = 0 }
@@ -91,11 +94,12 @@ wss.on('connection', function connection (ws) {
       case 'params':
         if (waitParams.has(ws)) {
           waitParams.delete(ws)
-          ws.filter = msg.filter
+          ws.filter = msg.data.filter
           ws.channels = new Set()
           //          ws.listenBroadcast = msg.listenBroadcast === undefined ? true : !!msg.listenBroadcast
-          ws.listenBroadcast = msg.listenBroadcast ?? true
+          ws.listenBroadcast = msg.data.listenBroadcast ?? true
           if (ws.listenBroadcast) { subscribe(ws, undefined) }
+          // wss.clients.forEach(ws => console.log('filter', ws.filter))
         } else {
           ws.send(JSON.stringify({ type: 'error', data: 'params already set' }))
         }
@@ -150,6 +154,7 @@ function subscribe (ws, channel) {
     channels.push(channelObj)
   }
   channelObj.clients.add(ws)
+  // console.log(new Date(), 'join', channel, filter, channelObj.clients.size)
   ws.channels.add(channel)
 }
 
@@ -166,6 +171,7 @@ function unsubscribe (ws, channel) {
 
 function broadcast (filter, { type, channel, data }) {
   const channelObj = channels.find(el => el.channel === channel && el.filter === filter)
+  // console.log(new Date(), 'broadcast', channelObj?.clients?.size, { filter, type, channel, data })
   // console.log(channel, filter, channelObj)
   if (!channelObj) { return }
   channelObj.clients.forEach(client => {
