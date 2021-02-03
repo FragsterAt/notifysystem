@@ -86,53 +86,64 @@ wss.on('connection', function connection (ws) {
     }
     // console.log(new Date(), 'ws', msg.type, msg)
 
-    stats.messages++
-    if (stats.messagesByType[msg.type] === undefined) { stats.messagesByType[msg.type] = 0 }
-    stats.messagesByType[msg.type]++
+    try {
+      stats.messages++
+      if (stats.messagesByType[msg.type] === undefined) { stats.messagesByType[msg.type] = 0 }
+      stats.messagesByType[msg.type]++
+    } catch (error) {
+      console.error(error, message)
+      ws.send(JSON.stringify({ type: 'error', data: 'Wrong message format' }))
+      return
+    }
 
-    switch (msg.type) {
-      case 'params':
-        if (waitParams.has(ws)) {
-          waitParams.delete(ws)
-          ws.filter = msg.data.filter
-          ws.channels = new Set()
-          //          ws.listenBroadcast = msg.listenBroadcast === undefined ? true : !!msg.listenBroadcast
-          ws.listenBroadcast = msg.data.listenBroadcast ?? true
-          if (ws.listenBroadcast) { subscribe(ws, undefined) }
+    try {
+      switch (msg.type) {
+        case 'params':
+          if (waitParams.has(ws)) {
+            waitParams.delete(ws)
+            ws.filter = msg.data?.filter ?? msg.filter
+            ws.channels = new Set()
+            //          ws.listenBroadcast = msg.listenBroadcast === undefined ? true : !!msg.listenBroadcast
+            ws.listenBroadcast = msg.data.listenBroadcast ?? true
+            if (ws.listenBroadcast) { subscribe(ws, undefined) }
           // wss.clients.forEach(ws => console.log('filter', ws.filter))
-        } else {
-          ws.send(JSON.stringify({ type: 'error', data: 'params already set' }))
-        }
-        break
+          } else {
+            ws.send(JSON.stringify({ type: 'error', data: 'params already set' }))
+          }
+          break
 
-      case 'message':
-      case 'notify-changed':
-      case 'notify-type-changed':
-      case 'notify':
-        if (!waitParams.has(ws)) {
-          broadcast(ws.filter, msg)
-        } else {
-          ws.send(JSON.stringify({ type: 'error', data: 'wait for params' }))
-        }
-        break
+        case 'message':
+        case 'notify-changed':
+        case 'notify-type-changed':
+        case 'notify':
+          if (!waitParams.has(ws)) {
+            broadcast(ws.filter, msg)
+          } else {
+            ws.send(JSON.stringify({ type: 'error', data: 'wait for params' }))
+          }
+          break
 
-      case 'join':
-        if (!waitParams.has(ws)) {
-          subscribe(ws, msg.channel, msg.data)
-        } else {
-          ws.send(JSON.stringify({ type: 'error', data: 'wait for params' }))
-        }
-        break
-      case 'leave':
-        if (!waitParams.has(ws)) {
-          unsubscribe(ws, msg.channel, msg.data)
-        } else {
-          ws.send(JSON.stringify({ type: 'error', data: 'wait for params' }))
-        }
-        break
+        case 'join':
+          if (!waitParams.has(ws)) {
+            subscribe(ws, msg.channel, msg.data)
+          } else {
+            ws.send(JSON.stringify({ type: 'error', data: 'wait for params' }))
+          }
+          break
+        case 'leave':
+          if (!waitParams.has(ws)) {
+            unsubscribe(ws, msg.channel, msg.data)
+          } else {
+            ws.send(JSON.stringify({ type: 'error', data: 'wait for params' }))
+          }
+          break
 
-      default:
-        break
+        default:
+          break
+      }
+    } catch (error) {
+      console.error(error, message)
+      ws.send(JSON.stringify({ type: 'error', data: 'Wrong message format' }))
     }
   })
 
