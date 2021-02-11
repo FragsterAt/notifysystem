@@ -2,22 +2,41 @@ require('dotenv').config()
 const WebSocket = require('ws')
 const http = require('http')
 
-const { getRequestBody } = require('./src/support.js')
+const { authorize } = require('./src/authorize')
+const { getRequestBody } = require('./src/support')
 
 const server = http.createServer(requestListener)
-const wss = new WebSocket.Server({ server })
+const wss = new WebSocket.Server({ noServer: true })
 
-function requestListener (request, response) {
+async function requestListener (request, response) {
+  const authorized = await authorize(request)
+  if (!authorized) {
+    response.writeHead(401)
+    response.end('401 Unauthorized')
+    return
+  }
+
   const { method } = request
   if (stats.requests[method] === undefined) { stats.requests[method] = 0 }
   stats.requests[method]++
   if (method === 'GET') {
-    // возвращаем json со статусом
     statusResponse(response)
   } else if (method === 'POST') {
     processPostMessage(request, response)
   };
 }
+
+server.on('upgrade', async (request, socket, head) => {
+  const authorized = await authorize(request)
+  if (authorized) {
+    wss.handleUpgrade(request, socket, head, ws => {
+      wss.emit('connection', ws, request, request)
+    })
+  } else {
+    socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n')
+    socket.destroy()
+  }
+})
 
 const waitParams = new Set()
 const channels = []
@@ -52,6 +71,8 @@ async function processPostMessage (request, response) {
         case 'notify-changed':
         case 'notify-type-changed':
         case 'notify':
+        case 'navigation-link':
+        case 'user-alert':
           broadcast(params.filter, msg)
           break
       }
@@ -116,6 +137,8 @@ wss.on('connection', function connection (ws) {
         case 'notify-changed':
         case 'notify-type-changed':
         case 'notify':
+        case 'navigation-link':
+        case 'user-alert':
           if (!waitParams.has(ws)) {
             broadcast(ws.filter, msg)
           } else {
