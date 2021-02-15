@@ -126,7 +126,7 @@ wss.on('connection', function connection (ws) {
             ws.channels = new Set()
             //          ws.listenBroadcast = msg.listenBroadcast === undefined ? true : !!msg.listenBroadcast
             ws.listenBroadcast = msg.data.listenBroadcast ?? true
-            if (ws.listenBroadcast) { subscribe(ws, undefined) }
+            if (ws.listenBroadcast) { subscribe(ws, null) }
           // wss.clients.forEach(ws => console.log('filter', ws.filter))
           } else {
             ws.send(JSON.stringify({ type: 'error', data: 'params already set' }))
@@ -203,7 +203,7 @@ function unsubscribe (ws, channel) {
   if (channelObj.clients.size === 0) { channels.splice(channelIndex, 1) }
 }
 
-function broadcast (filter, { type, channel, data }) {
+function broadcast (filter, { type, channel = null, data }) {
   const channelObj = channels.find(el => el.channel === channel && el.filter === filter)
   // console.log(new Date(), 'broadcast', channelObj?.clients?.size, { filter, type, channel, data })
   // console.log(channel, filter, channelObj)
