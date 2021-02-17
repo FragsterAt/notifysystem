@@ -127,6 +127,7 @@ wss.on('connection', function connection (ws) {
             //          ws.listenBroadcast = msg.listenBroadcast === undefined ? true : !!msg.listenBroadcast
             ws.listenBroadcast = msg.data.listenBroadcast ?? true
             if (ws.listenBroadcast) { subscribe(ws, null) }
+            ws.send(JSON.stringify({ type: 'ready' }))
           // wss.clients.forEach(ws => console.log('filter', ws.filter))
           } else {
             ws.send(JSON.stringify({ type: 'error', data: 'params already set' }))
