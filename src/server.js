@@ -165,10 +165,11 @@ module.exports.createServer = function ({ authorize, statusResponse, onRequest, 
             if (waitParams.has(ws)) {
               waitParams.delete(ws)
               ws.filter = msg.data?.filter ?? msg.filter
+              ws.broadcastChannel = `broadcast_${msg.data?.broadcastFilter ?? msg.broadcastFilter}`
               ws.channels = new Set()
               //          ws.listenBroadcast = msg.listenBroadcast === undefined ? true : !!msg.listenBroadcast
               ws.listenBroadcast = msg.data.listenBroadcast ?? true
-              if (ws.listenBroadcast) { subscribe(ws, null) }
+              if (ws.listenBroadcast) { subscribe(ws, ws.broadcastChannel) }
               ws.send(JSON.stringify({ type: 'ready' }))
               // wss.clients.forEach(ws => console.log('filter', ws.filter))
             } else {
@@ -177,13 +178,20 @@ module.exports.createServer = function ({ authorize, statusResponse, onRequest, 
             break
 
           case 'message':
+            if (!waitParams.has(ws)) {
+              broadcast(ws.filter, msg)
+            } else {
+              ws.send(JSON.stringify({ type: 'error', data: 'wait for params' }))
+            }
+            break
+          case 'broadcast-message':
           case 'notify-changed':
           case 'notify-type-changed':
           case 'notify':
           case 'navigation-link':
           case 'user-alert':
             if (!waitParams.has(ws)) {
-              broadcast(ws.filter, msg)
+              broadcast(ws.filter, { ...msg, channel: ws.broadcastChannel })
             } else {
               ws.send(JSON.stringify({ type: 'error', data: 'wait for params' }))
             }
