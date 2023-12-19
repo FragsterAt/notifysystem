@@ -1,5 +1,5 @@
-const { getRequestBody } = require('./support')
-const https = require('https')
+import { getRequestBody } from './support.js'
+import { get } from 'https'
 
 const secret = process.env['RECAPTCHA-SECRET']
 const key = process.env.KEY
@@ -10,7 +10,7 @@ function verifyToken (token) {
     verifyUrl.searchParams.set('secret', secret)
     verifyUrl.searchParams.set('response', token)
 
-    https.get(verifyUrl.toString(), async res => {
+    get(verifyUrl.toString(), async res => {
       const body = await getRequestBody(res)
       resolve(!!JSON.parse(body).success)
     }).on('error', e => {
@@ -19,7 +19,7 @@ function verifyToken (token) {
   })
 }
 
-module.exports.authorize = async function (request) {
+export async function authorize (request) {
   const requestUrl = new URL(request.url, `http://${request.headers.host}`)
   const params = requestUrl.searchParams
   let success = !secret && !key

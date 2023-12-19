@@ -1,10 +1,11 @@
 
-const WebSocket = require('ws')
-const http = require('http')
+import { WebSocketServer } from 'ws'
+import { createServer as createHttpServer } from 'http'
 
-const { getRequestBody } = require('./support')
+import { execJsonRpc, getRequestBody } from './support.js'
+import { uniqueId } from 'lodash-es'
 
-function requestListener ({ authorize, statusResponse, onRequest }) {
+function requestListener ({ authorize, statusResponse, onRequest, onQuit }) {
   return async function (request, response) {
     const authorized = await authorize(request)
     if (!authorized) {
@@ -68,7 +69,7 @@ function unsubscribe (ws, channel) {
   if (channelObj.clients.size === 0) { channels.splice(channelIndex, 1) }
 }
 
-function broadcast (filter, { type, channel = null, data, timeout = null }) {
+export function broadcast (filter, { type, channel = null, data, timeout = null }) {
   const channelObj = channels.find(el => el.channel === channel && el.filter === filter)
   // console.log(new Date(), 'broadcast', channelObj?.clients?.size, { filter, type, channel, data })
   // console.log(channel, filter, channelObj)
@@ -96,6 +97,7 @@ async function processPostMessage (request, response) {
     // console.log(new Date(), 'post params', params)
     messages.forEach(msg => {
       // console.log(new Date(), 'post', msg)
+
       switch (msg.type) {
         case 'message':
         case 'notify-changed':
@@ -119,9 +121,9 @@ async function processPostMessage (request, response) {
   }
 }
 
-module.exports.createServer = function ({ authorize, statusResponse, onRequest, onMessage }) {
-  const server = http.createServer(requestListener({ authorize, statusResponse, onRequest }))
-  const wss = new WebSocket.Server({ noServer: true })
+export function createServer ({ authorize, statusResponse, onConnection, onRequest, onMessage, onClose, rpcObjects = [] }) {
+  const server = createHttpServer(requestListener({ authorize, statusResponse, onRequest }))
+  const wss = new WebSocketServer({ noServer: true })
 
   server.on('upgrade', async (request, socket, head) => {
     const authorized = await authorize(request)
@@ -140,6 +142,8 @@ module.exports.createServer = function ({ authorize, statusResponse, onRequest, 
     waitParams.add(ws)
     ws.filter = undefined
 
+    onConnection?.(ws)
+
     ws.on('message', function incoming (message) {
       let msg
       try {
@@ -152,7 +156,7 @@ module.exports.createServer = function ({ authorize, statusResponse, onRequest, 
       // console.log(new Date(), 'ws', msg.type, msg)
 
       try {
-        onMessage(msg)
+        onMessage?.(msg)
       } catch (error) {
         console.error(error, message)
         ws.send(JSON.stringify({ type: 'error', data: 'onMessage handler error', error }))
@@ -160,60 +164,58 @@ module.exports.createServer = function ({ authorize, statusResponse, onRequest, 
       }
 
       try {
-        switch (msg.type) {
-          case 'params':
-            if (waitParams.has(ws)) {
+        if (msg.type === 'params') {
+          if (!waitParams.has(ws)) {
+            ws.send(JSON.stringify({ type: 'error', data: 'params already set' }))
+            return
+          }
+        } else {
+          if (waitParams.has(ws)) {
+            ws.send(JSON.stringify({ type: 'error', data: 'wait for params' }))
+            return
+          }
+        }
+
+        if (msg.jsonrpc) {
+          execJsonRpc(ws, rpcObjects, msg)
+        } else {
+          switch (msg.type) {
+            case 'params':
               waitParams.delete(ws)
               ws.filter = msg.data?.filter ?? msg.filter
+              ws.session = msg.sessionId ?? uniqueId()
+              ws.client = msg.client
               ws.broadcastChannel = `broadcast_${msg.data?.broadcastFilter ?? msg.broadcastFilter}`
               ws.channels = new Set()
               //          ws.listenBroadcast = msg.listenBroadcast === undefined ? true : !!msg.listenBroadcast
               ws.listenBroadcast = msg.data.listenBroadcast ?? true
               if (ws.listenBroadcast) { subscribe(ws, ws.broadcastChannel) }
-              ws.send(JSON.stringify({ type: 'ready' }))
+              ws.send(JSON.stringify({ type: 'ready', sessionId: ws.session }))
               // wss.clients.forEach(ws => console.log('filter', ws.filter))
-            } else {
-              ws.send(JSON.stringify({ type: 'error', data: 'params already set' }))
-            }
-            break
+              break
 
-          case 'message':
-            if (!waitParams.has(ws)) {
+            case 'message':
               broadcast(ws.filter, msg)
-            } else {
-              ws.send(JSON.stringify({ type: 'error', data: 'wait for params' }))
-            }
-            break
-          case 'broadcast-message':
-          case 'notify-changed':
-          case 'notify-type-changed':
-          case 'notify':
-          case 'navigation-link':
-          case 'user-alert':
-            if (!waitParams.has(ws)) {
+              break
+            case 'broadcast-message':
+            case 'notify-changed':
+            case 'notify-type-changed':
+            case 'notify':
+            case 'navigation-link':
+            case 'user-alert':
               broadcast(ws.filter, { ...msg, channel: ws.broadcastChannel })
-            } else {
-              ws.send(JSON.stringify({ type: 'error', data: 'wait for params' }))
-            }
-            break
+              break
 
-          case 'join':
-            if (!waitParams.has(ws)) {
-              subscribe(ws, msg.channel, msg.data)
-            } else {
-              ws.send(JSON.stringify({ type: 'error', data: 'wait for params' }))
-            }
-            break
-          case 'leave':
-            if (!waitParams.has(ws)) {
-              unsubscribe(ws, msg.channel, msg.data)
-            } else {
-              ws.send(JSON.stringify({ type: 'error', data: 'wait for params' }))
-            }
-            break
+            case 'join':
+              subscribe(ws, msg.channel)
+              break
+            case 'leave':
+              unsubscribe(ws, msg.channel)
+              break
 
-          default:
-            break
+            default:
+              break
+          }
         }
       } catch (error) {
         console.error(error, message)
@@ -225,7 +227,9 @@ module.exports.createServer = function ({ authorize, statusResponse, onRequest, 
       // console.log(new Date(), 'ws', 'close')
       waitParams.delete(ws)
       ws?.channels?.forEach(channel => unsubscribe(ws, channel))
+      rpcObjects.forEach(({ onClose }) => onClose?.())
       // ChannelManager.unsubscribeClient(ws)
+      onClose?.(ws)
     })
 
     ws.send(JSON.stringify({ type: 'waitParams', data: 'wait for params' }))

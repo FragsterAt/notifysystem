@@ -1,7 +1,9 @@
-require('dotenv').config()
+import { authorize } from './src/authorize.js'
+import { createServer } from './src/server.js'
+import locksRPC from './src/locks.js'
 
-const { authorize } = require('./src/authorize')
-const { createServer } = require('./src/server')
+import * as dotenv from 'dotenv'
+dotenv.config()
 
 const stats = {
   messages: 0,
@@ -29,6 +31,6 @@ function statusResponse (response) {
   response.end(JSON.stringify(status))
 }
 
-const server = createServer({ authorize, statusResponse, onRequest, onMessage })
+const server = createServer({ authorize, statusResponse, onRequest, onMessage, rpcObjects: [locksRPC] })
 
 server.start(process.env.PORT)
