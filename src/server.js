@@ -1,4 +1,3 @@
-
 import { WebSocketServer } from 'ws'
 import { createServer as createHttpServer } from 'http'
 
@@ -69,8 +68,9 @@ function unsubscribe (ws, channel) {
   if (channelObj.clients.size === 0) { channels.splice(channelIndex, 1) }
 }
 
-export function broadcast (filter, { type, channel = null, data, timeout = null }) {
+export function broadcast (filter, { type, channel = null, data, timeout = null, self = true }, ws) {
   const channelObj = channels.find(el => el.channel === channel && el.filter === filter)
+  console.log('broadcast', filter, type, channel, data, channelObj)
   // console.log(new Date(), 'broadcast', channelObj?.clients?.size, { filter, type, channel, data })
   // console.log(channel, filter, channelObj)
   if (!channelObj) {
@@ -78,7 +78,9 @@ export function broadcast (filter, { type, channel = null, data, timeout = null 
     return
   }
   channelObj.clients.forEach(client => {
-    client.send(JSON.stringify({ type, channel, data }))
+    if (self || client !== ws) {
+      client.send(JSON.stringify({ type, channel, data, client: ws.client, session: ws.session }))
+    }
   })
 }
 
@@ -182,20 +184,20 @@ export function createServer ({ authorize, statusResponse, onConnection, onReque
           switch (msg.type) {
             case 'params':
               waitParams.delete(ws)
-              ws.filter = msg.data?.filter ?? msg.filter
-              ws.session = msg.sessionId ?? uniqueId()
-              ws.client = msg.client
-              ws.broadcastChannel = `broadcast_${msg.data?.broadcastFilter ?? msg.broadcastFilter}`
+              ws.filter = msg.data.filter
+              ws.session = msg.data.session ?? uniqueId()
+              ws.client = msg.data.client
+              ws.broadcastChannel = (!!msg.data.broadcastFilter) && `broadcast_${msg.data.broadcastFilter}`
               ws.channels = new Set()
-              //          ws.listenBroadcast = msg.listenBroadcast === undefined ? true : !!msg.listenBroadcast
-              ws.listenBroadcast = msg.data.listenBroadcast ?? true
+              // ws.listenBroadcast = msg.listenBroadcast === undefined ? true : !!msg.listenBroadcast
+              ws.listenBroadcast = !!msg.data.broadcastFilter
               if (ws.listenBroadcast) { subscribe(ws, ws.broadcastChannel) }
-              ws.send(JSON.stringify({ type: 'ready', sessionId: ws.session }))
+              ws.send(JSON.stringify({ type: 'ready', session: ws.session }))
               // wss.clients.forEach(ws => console.log('filter', ws.filter))
               break
 
             case 'message':
-              broadcast(ws.filter, msg)
+              broadcast(ws.filter, msg, ws)
               break
             case 'broadcast-message':
             case 'notify-changed':
@@ -203,7 +205,7 @@ export function createServer ({ authorize, statusResponse, onConnection, onReque
             case 'notify':
             case 'navigation-link':
             case 'user-alert':
-              broadcast(ws.filter, { ...msg, channel: ws.broadcastChannel })
+              broadcast(ws.filter, { ...msg, channel: ws.broadcastChannel }, ws)
               break
 
             case 'join':
@@ -227,7 +229,7 @@ export function createServer ({ authorize, statusResponse, onConnection, onReque
       // console.log(new Date(), 'ws', 'close')
       waitParams.delete(ws)
       ws?.channels?.forEach(channel => unsubscribe(ws, channel))
-      rpcObjects.forEach(({ onClose }) => onClose?.())
+      rpcObjects.forEach(({ onClose }) => onClose?.(ws))
       // ChannelManager.unsubscribeClient(ws)
       onClose?.(ws)
     })

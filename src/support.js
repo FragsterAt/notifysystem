@@ -1,4 +1,3 @@
-
 export function getRequestBody (request) {
   return new Promise(function (resolve, reject) {
     let body = ''
@@ -11,11 +10,12 @@ export function getRequestBody (request) {
   })
 }
 
-export function execJsonRpc (ws, rpcObjects, msg) {
+export async function execJsonRpc (ws, rpcObjects, msg) {
   try {
     for (const rpcObject of rpcObjects) {
       if (!rpcObject.methods[msg.method]) continue
-
+      const result = await rpcObject.methods[msg.method](ws, msg.params)
+      console.log('execJsonRpc', msg, result)
       ws.send(JSON.stringify({ jsonrpc: '2.0', result: rpcObject.methods[msg.method](ws, msg.params), id: msg.id }))
       return
     }
