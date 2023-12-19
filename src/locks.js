@@ -4,7 +4,6 @@ const lockChannels = []
 
 function broadcast (filter, { type, channel, data }, ws) {
   const channelObj = lockChannels.find(el => el.channel === channel && el.filter === filter)
-  console.log(channelObj)
   channelObj.clients.forEach(client => {
     if (client !== ws) {
       client.send(JSON.stringify({ type, channel, data }))
@@ -26,13 +25,19 @@ function lock (ws, { channel, resource, type }) {
   }
 
   const channelObj = lockChannels[channelIndex]
-  const resourceLocks = channelObj.resources.filter(r => isEqual(r.resource, resource))
+  const resourceLocks = channelObj.resources.filter(r => {
+    return isEqual(r.resource, resource)
+  })
   if (type === 'x' && resourceLocks.some(r => r.ws !== ws)) { // хотим установить эксклюзив, но есть другие блокировки
     throw new Error()
   } else if (type === 's' && resourceLocks.some(r => r.type === 'x' && r.ws !== ws)) { // хотим установить разделяемую, но есть эксклюзивная
     throw new Error()
   } else {
-    const lock = resourceLocks.find(r => r.ws === ws)
+    const lock = resourceLocks.find(r => {
+      console.log(r.ws.session, ws.session, r.ws === ws)
+      return r.ws === ws
+    })
+    console.log(lock)
     if (lock) {
       lock.type = type
     } else {
@@ -40,7 +45,6 @@ function lock (ws, { channel, resource, type }) {
     }
   }
   broadcast(ws.filter, { type: 'locks', channel, data: { action: 'lock', type, resource, client: ws.client, session: ws.session } }, ws)
-  console.log({ type, resource, client: ws.client, session: ws.session })
   return { type, resource, client: ws.client, session: ws.session }
 }
 
@@ -53,9 +57,6 @@ function unlock (ws, { channel, resource }) {
   if (index !== 0) {
     channelObj.resources.splice(index, 1)
     broadcast(ws.filter, { type: 'locks', channel, data: { action: 'unlock', resource, client: ws.client, session: ws.session } }, ws)
-    if (channelObj.resources.length === 0) {
-      lockChannels.splice(channelIndex, 1)
-    }
   }
 }
 
@@ -90,8 +91,7 @@ function leaveLocks (ws, channel) {
   }
 
   const channelObj = lockChannels[channelIndex]
-  console.log(channelObj)
-  removeAllLocks(channelObj)
+  removeAllLocks(ws, channelObj)
   if (channelObj.clients.size === 0) {
     lockChannels.splice(channelIndex, 1)
   }
@@ -101,7 +101,7 @@ function onClose (ws) {
   for (let i = 0; i < lockChannels.length; i++) {
     const channelObj = lockChannels[i]
     if (channelObj.filter !== ws.filter) continue
-    removeAllLocks(channelObj)
+    removeAllLocks(ws, channelObj)
     if (channelObj.clients.size === 0) {
       lockChannels.splice(i, 1)
       i--
