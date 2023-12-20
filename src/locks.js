@@ -34,10 +34,10 @@ function lock (ws, { channel, resource, type }) {
     throw new Error()
   } else {
     const lock = resourceLocks.find(r => {
-      console.log(r.ws.session, ws.session, r.ws === ws)
+      // console.log(r.ws.session, ws.session, r.ws === ws)
       return r.ws === ws
     })
-    console.log(lock)
+    // console.log(lock)
     if (lock) {
       lock.type = type
     } else {

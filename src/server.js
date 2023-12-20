@@ -229,7 +229,13 @@ export function createServer ({ authorize, statusResponse, onConnection, onReque
       // console.log(new Date(), 'ws', 'close')
       waitParams.delete(ws)
       ws?.channels?.forEach(channel => unsubscribe(ws, channel))
-      rpcObjects.forEach(({ onClose }) => onClose?.(ws))
+      rpcObjects.forEach(({ onClose }) => {
+        try {
+          onClose?.(ws)
+        } catch (error) {
+          console.error(error)
+        }
+      })
       // ChannelManager.unsubscribeClient(ws)
       onClose?.(ws)
     })
