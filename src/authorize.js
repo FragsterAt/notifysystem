@@ -1,6 +1,9 @@
 import { getRequestBody } from './support.js'
 import { get } from 'https'
 
+import * as dotenv from 'dotenv'
+dotenv.config()
+
 const secret = process.env['RECAPTCHA-SECRET']
 const key = process.env.KEY
 

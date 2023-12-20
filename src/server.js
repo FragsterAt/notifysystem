@@ -7,6 +7,7 @@ import { uniqueId } from 'lodash-es'
 function requestListener ({ authorize, statusResponse, onRequest, onQuit }) {
   return async function (request, response) {
     const authorized = await authorize(request)
+    console.log('request', authorized)
     if (!authorized) {
       response.writeHead(401)
       response.end('401 Unauthorized')
