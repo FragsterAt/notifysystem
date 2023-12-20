@@ -101,6 +101,7 @@ function onClose (ws) {
   for (let i = 0; i < lockChannels.length; i++) {
     const channelObj = lockChannels[i]
     if (channelObj.filter !== ws.filter) continue
+
     removeAllLocks(ws, channelObj)
     if (channelObj.clients.size === 0) {
       lockChannels.splice(i, 1)
