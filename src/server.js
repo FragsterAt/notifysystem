@@ -71,7 +71,7 @@ function unsubscribe (ws, channel) {
 
 export function broadcast (filter, { type, channel = null, data, timeout = null, self = true }, ws) {
   const channelObj = channels.find(el => el.channel === channel && el.filter === filter)
-  console.log('broadcast', filter, type, channel, data, channelObj)
+  // console.log('broadcast', filter, type, channel, data, channelObj)
   // console.log(new Date(), 'broadcast', channelObj?.clients?.size, { filter, type, channel, data })
   // console.log(channel, filter, channelObj)
   if (!channelObj) {
@@ -80,7 +80,7 @@ export function broadcast (filter, { type, channel = null, data, timeout = null,
   }
   channelObj.clients.forEach(client => {
     if (self || client !== ws) {
-      client.send(JSON.stringify({ type, channel, data, client: ws.client, session: ws.session }))
+      client.send(JSON.stringify({ type, channel, data, client: ws?.client, session: ws?.session }))
     }
   })
 }
