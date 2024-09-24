@@ -103,6 +103,7 @@ async function processPostMessage (request, response) {
 
       switch (msg.type) {
         case 'message':
+        case 'broadcast-message':
         case 'notify-changed':
         case 'notify-type-changed':
         case 'notify':
