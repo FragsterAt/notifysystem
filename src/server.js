@@ -188,7 +188,7 @@ export function createServer ({ authorize, statusResponse, onConnection, onReque
               ws.filter = msg.data.filter
               ws.session = msg.data.session ?? uniqueId()
               ws.client = msg.data.client
-              ws.broadcastChannel = `broadcast_${msg.data.broadcastFilter}`
+              ws.broadcastChannel = `broadcast_${msg.data.broadcastFilter ?? msg.data.filter}`
               ws.channels = new Set()
               // ws.listenBroadcast = msg.listenBroadcast === undefined ? true : !!msg.listenBroadcast
               ws.listenBroadcast = msg.data.listenBroadcast ?? true
