@@ -2,19 +2,20 @@ import { getRequestBody } from './support.js'
 import { get } from 'https'
 
 import * as dotenv from 'dotenv'
+import { IncomingMessage } from 'http'
 dotenv.config()
 
 const secret = process.env['RECAPTCHA-SECRET']
 const key = process.env.KEY
 
-function verifyToken (token) {
+function verifyToken (token: string): Promise<boolean> {
   return new Promise((resolve, reject) => {
     const verifyUrl = new URL('/recaptcha/api/siteverify', 'https://www.google.com')
-    verifyUrl.searchParams.set('secret', secret)
+    verifyUrl.searchParams.set('secret', secret ?? '')
     verifyUrl.searchParams.set('response', token)
 
     get(verifyUrl.toString(), async res => {
-      const body = await getRequestBody(res)
+      const body = await getRequestBody(res) as string
       resolve(!!JSON.parse(body).success)
     }).on('error', e => {
       reject(e)
@@ -22,12 +23,12 @@ function verifyToken (token) {
   })
 }
 
-export async function authorize (request) {
-  const requestUrl = new URL(request.url, `http://${request.headers.host}`)
+export async function authorize (request: IncomingMessage) {
+  const requestUrl = new URL(request.url ?? '', `http://${request.headers.host}`)
   const params = requestUrl.searchParams
   let success = !secret && !key
   if (secret && params.has('token')) {
-    success = await verifyToken(params.get('token'))
+    success = await verifyToken(params.get('token') ?? '')
   } else if (key && params.has('key')) {
     success = key === params.get('key')
   }

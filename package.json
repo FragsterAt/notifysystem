@@ -2,15 +2,25 @@
   "name": "notifysystem",
   "version": "1.0.0",
   "description": "Система оповещений для 1с и не только на основе веб сокетов",
-  "main": "index.js",
-  "node": ">=18.0.0",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "node": ">=22.0.0",
   "type": "module",
   "directories": {
     "doc": "docs"
   },
+  "exports": {
+    ".": "./dist/index.js"
+  },
+  "files": [
+    "dist"
+  ],
   "scripts": {
-    "start": "node ./demo.js",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "build": "tsc",
+    "dev": "tsx examples/demo.ts",
+    "dev:watch": "tsx watch examples/demo.ts",
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "prepublishOnly": "npm run build"
   },
   "repository": {
     "type": "git",
@@ -27,17 +37,22 @@
   },
   "homepage": "https://github.com/FragsterAt/notifysystem#readme",
   "dependencies": {
-    "dotenv": "^10.0.0",
     "eslint-config-standart": "^0.2.0",
     "lodash-es": "^4.17.21",
     "ws": "^8.15.1"
   },
   "devDependencies": {
+    "@types/lodash-es": "^4.17.12",
+    "@types/node": "^26.1.1",
+    "@types/ws": "^8.18.1",
+    "dotenv": "^17.0.0",
     "eslint": "^8.23.0",
     "eslint-config-standard": "^17.0.0",
     "eslint-plugin-import": "^2.26.0",
     "eslint-plugin-n": "^15.2.5",
     "eslint-plugin-node": "^11.1.0",
-    "eslint-plugin-promise": "^6.0.1"
+    "eslint-plugin-promise": "^6.0.1",
+    "tsx": "^4.23.1",
+    "typescript": "^7.0.2"
   }
 }

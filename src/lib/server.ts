@@ -1,11 +1,12 @@
 import { WebSocketServer } from 'ws'
-import { createServer as createHttpServer } from 'http'
+import { createServer as createHttpServer, IncomingMessage, OutgoingMessage, ServerResponse } from 'http'
 
 import { execJsonRpc, getRequestBody } from './support.js'
 import { uniqueId } from 'lodash-es'
+import { RequestListenerOptions, NotificationChannel, NotificationSocket } from './index.js'
 
-function requestListener ({ authorize, statusResponse, onRequest, onQuit }) {
-  return async function (request, response) {
+function requestListener ({ authorize, statusResponse, onRequest, onQuit }: RequestListenerOptions)  {
+  return async function (request: IncomingMessage, response: ServerResponse) {
     const authorized = await authorize(request)
     console.log('request', authorized)
     if (!authorized) {
@@ -32,10 +33,10 @@ function requestListener ({ authorize, statusResponse, onRequest, onQuit }) {
 }
 
 const waitParams = new Set()
-const channels = []
-let pending = []
+const channels: NotificationChannel[] = []
+let pending: { type: string, channel: string, data: any, till: number }[] = []
 
-function subscribe (ws, channel) {
+function subscribe (ws: NotificationSocket, channel: string) {
   const { filter } = ws
   let channelObj = channels.find(el => el.channel === channel && el.filter === filter)
   if (!channelObj) {
@@ -58,7 +59,7 @@ function subscribe (ws, channel) {
   }
 }
 
-function unsubscribe (ws, channel) {
+function unsubscribe (ws: NotificationSocket, channel: string) {
   const channelIndex = channels.findIndex(el => el.channel === channel && el.filter === ws.filter)
   if (channelIndex === -1) {
     return
@@ -69,7 +70,7 @@ function unsubscribe (ws, channel) {
   if (channelObj.clients.size === 0) { channels.splice(channelIndex, 1) }
 }
 
-export function broadcast (filter, { type, channel = null, data, timeout = null, self = true }, ws) {
+export function broadcast (filter: string, { type, channel = null, data, timeout = null, self = true }, ws) {
   const channelObj = channels.find(el => el.channel === (channel ?? `broadcast_${filter}`) && el.filter === filter)
   // console.log('broadcast', filter, type, channel, data, channelObj)
   // console.log(new Date(), 'broadcast', channelObj?.clients?.size, { filter, type, channel, data })

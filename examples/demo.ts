@@ -1,8 +1,8 @@
 import * as dotenv from 'dotenv'
 
-import { authorize } from './src/authorize.js'
-import { createServer } from './src/server.js'
-import locksRPC from './src/locks.js'
+import { authorize } from '@/lib/authorize.js'
+import { createServer } from '@/lib/server.js'
+import locksRPC from '@/lib/locks.js'
 dotenv.config()
 
 const stats = {
