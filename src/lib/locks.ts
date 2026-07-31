@@ -1,120 +1,164 @@
 import { isEqual } from 'lodash-es'
+import { NotificationSocket } from './notificationSocket.js'
 
-const lockChannels = []
-
-function broadcast (filter, { type, channel, data }, ws) {
-  const channelObj = lockChannels.find(el => el.channel === channel && el.filter === filter)
-  channelObj.clients.forEach(client => {
-    if (client !== ws) {
-      client.send(JSON.stringify({ type, channel, data }))
-    }
-  })
+type LockChannel = {
+  clients: Set<NotificationSocket>
+  filter: string
+  channel: string
+  resources: LockResource[]
+}
+type LockType = 's' | 'x'
+type LockParams = {
+  channel: string
+  type: LockType
+  resource: unknown
+}
+type UnlockParams = {
+  channel: string
+  resource: unknown
+}
+type LockResource = {
+  resource: unknown
+  notificationSocket: NotificationSocket
+  type: LockType
+}
+type LockMessage = {
+  channel: string
+  data: {
+    action: 'lock'
+    type: LockType
+    resource: unknown
+    client: unknown
+    session: string
+  }
+}
+type UnlockMessage = {
+  channel: string
+  data: {
+    action: 'unlock'
+    resource: unknown
+    client: unknown
+    session: string
+  }
 }
 
-/**
- *
- * @param {WebSocket} ws
- * @param {channel: String, type: 's'|'x', resource: *} params
- * @param {Number} rpcId
- */
-function lock (ws, { channel, resource, type }) {
-  let channelIndex = lockChannels.findIndex(lc => lc.filter === ws.filter && lc.channel === channel)
-  if (channelIndex === -1) {
-    channelIndex = lockChannels.length
-    lockChannels.push({ filter: ws.filter, channel, resources: [], clients: new Set() })
+
+class RpcLockManager implements NotificationRPCObject {
+  constructor(readonly namespace = 'locks') {
   }
 
-  const channelObj = lockChannels[channelIndex]
-  const resourceLocks = channelObj.resources.filter(r => {
-    return isEqual(r.resource, resource)
-  })
-  if (type === 'x' && resourceLocks.some(r => r.ws !== ws)) { // хотим установить эксклюзив, но есть другие блокировки
-    throw new Error()
-  } else if (type === 's' && resourceLocks.some(r => r.type === 'x' && r.ws !== ws)) { // хотим установить разделяемую, но есть эксклюзивная
-    throw new Error()
-  } else {
-    const lock = resourceLocks.find(r => {
-      // console.log(r.ws.session, ws.session, r.ws === ws)
-      return r.ws === ws
+  private lockChannels: LockChannel[] = []
+
+  private broadcast (filter: string, { channel, data }: LockMessage | UnlockMessage, notificationSocket: NotificationSocket) {
+    const channelObj = this.lockChannels.find(el => el.channel === channel && el.filter === filter)
+    channelObj?.clients.forEach(client => {
+      if (client !== notificationSocket) {
+        client.send({ type: this.namespace, channel, data })
+      }
     })
-    // console.log(lock)
-    if (lock) {
-      lock.type = type
+  }
+
+  lock (notificationSocket: NotificationSocket, { channel, resource, type }: LockParams) {
+    let channelIndex = this.lockChannels.findIndex(lc => lc.filter === notificationSocket.filter && lc.channel === channel)
+    if (channelIndex === -1) {
+      channelIndex = this.lockChannels.length
+      this.lockChannels.push({ filter: notificationSocket.filter, channel, resources: [], clients: new Set<NotificationSocket>() })
+    }
+
+    const channelObj = this.lockChannels[channelIndex]
+    const resourceLocks = channelObj.resources.filter(r => {
+      return isEqual(r.resource, resource)
+    })
+    if (type === 'x' && resourceLocks.some(r => r.notificationSocket !== notificationSocket)) { // хотим установить эксклюзив, но есть другие блокировки
+      throw new Error()
+    } else if (type === 's' && resourceLocks.some(r => r.type === 'x' && r.notificationSocket !== notificationSocket)) { // хотим установить разделяемую, но есть эксклюзивная
+      throw new Error()
     } else {
-      channelObj.resources.push({ ws, type, resource })
+      const lock = resourceLocks.find(r => {
+        // console.log(r.ws.session, ws.session, r.ws === ws)
+        return r.notificationSocket === notificationSocket
+      })
+      // console.log(lock)
+      if (lock) {
+        lock.type = type
+      } else {
+        channelObj.resources.push({ notificationSocket: notificationSocket, type, resource })
+      }
+    }
+    this.broadcast(notificationSocket.filter, { channel, data: { action: 'lock', type, resource, client: notificationSocket.client, session: notificationSocket.session } }, notificationSocket)
+    return { type, resource, client: notificationSocket.client, session: notificationSocket.session }
+  }
+  unlock (notificationSocket: NotificationSocket, { channel, resource }: UnlockParams) {
+    const channelIndex = this.lockChannels.findIndex(lc => lc.filter === notificationSocket.filter && lc.channel === channel)
+    if (channelIndex === -1) return
+    const channelObj = this.lockChannels[channelIndex]
+    const index = channelObj.resources.findIndex(r => r.notificationSocket === notificationSocket && isEqual(r.resource, resource))
+
+    if (index !== 0) {
+      channelObj.resources.splice(index, 1)
+      this.broadcast(notificationSocket.filter, { channel, data: { action: 'unlock', resource, client: notificationSocket.client, session: notificationSocket.session } }, notificationSocket)
     }
   }
-  broadcast(ws.filter, { type: 'locks', channel, data: { action: 'lock', type, resource, client: ws.client, session: ws.session } }, ws)
-  return { type, resource, client: ws.client, session: ws.session }
-}
 
-function unlock (ws, { channel, resource }) {
-  const channelIndex = lockChannels.findIndex(lc => lc.filter === ws.filter && lc.channel === channel)
-  if (channelIndex === -1) return
-  const channelObj = lockChannels[channelIndex]
-  const index = channelObj.resources.findIndex(r => r.ws === ws && isEqual(r.resource === resource))
-
-  if (index !== 0) {
-    channelObj.resources.splice(index, 1)
-    broadcast(ws.filter, { type: 'locks', channel, data: { action: 'unlock', resource, client: ws.client, session: ws.session } }, ws)
-  }
-}
-
-function getLocks (ws, channel) {
-  let channelIndex = lockChannels.findIndex(lc => lc.filter === ws.filter && lc.channel === channel)
-  if (channelIndex === -1) {
-    channelIndex = lockChannels.length
-    lockChannels.push({ filter: ws.filter, channel, resources: [], clients: new Set() })
-  }
-
-  const channelObj = lockChannels[channelIndex]
-  channelObj.clients.add(ws)
-
-  return channelObj.resources.map(({ type, resource, ws: { session, client } }) => ({ type, resource, session, client }))
-}
-
-function removeAllLocks (ws, { channel, resources, clients }) {
-  for (let ri = 0; ri < resources.length; ri++) {
-    if (resources[ri].ws === ws) {
-      const [{ resource }] = resources.splice(ri, 1)
-      broadcast(ws.filter, { type: 'locks', channel, data: { action: 'unlock', resource, client: ws.client, session: ws.session } }, ws)
-      break
+  getLocks (notificationSocket: NotificationSocket, channel: string) {
+    let channelIndex = this.lockChannels.findIndex(lc => lc.filter === notificationSocket.filter && lc.channel === channel)
+    if (channelIndex === -1) {
+      channelIndex = this.lockChannels.length
+      this.lockChannels.push({ filter: notificationSocket.filter, channel, resources: [], clients: new Set() })
     }
-  }
-  clients.delete(ws)
-}
 
-function leaveLocks (ws, channel) {
-  const channelIndex = lockChannels.findIndex(lc => lc.filter === ws.filter && lc.channel === channel)
-  if (channelIndex === -1) {
-    return
+    const channelObj = this.lockChannels[channelIndex]
+    channelObj.clients.add(notificationSocket)
+
+    return channelObj.resources.map(({ type, resource, notificationSocket: { session, client } }) => ({ type, resource, session, client }))
   }
 
-  const channelObj = lockChannels[channelIndex]
-  removeAllLocks(ws, channelObj)
-  if (channelObj.clients.size === 0) {
-    lockChannels.splice(channelIndex, 1)
+  // Снимает все блокировки notificationSocket из канала
+  removeAllLocks (notificationSocket: NotificationSocket, { channel, resources, clients }: LockChannel) {
+    for (let ri = 0; ri < resources.length; ri++) {
+      if (resources[ri].notificationSocket === notificationSocket) {
+        const [{ resource }] = resources.splice(ri, 1)
+        this.broadcast(notificationSocket.filter, { channel, data: { action: 'unlock', resource, client: notificationSocket.client, session: notificationSocket.session } }, notificationSocket)
+        break
+      }
+    }
+    clients.delete(notificationSocket)
   }
-}
 
-function onClose (ws) {
-  for (let i = 0; i < lockChannels.length; i++) {
-    const channelObj = lockChannels[i]
-    if (channelObj.filter !== ws.filter) continue
+  leaveLocks (notificationSocket: NotificationSocket, channel: string) {
+    const channelIndex = this.lockChannels.findIndex(lc => lc.filter === notificationSocket.filter && lc.channel === channel)
+    if (channelIndex === -1) {
+      return
+    }
 
-    removeAllLocks(ws, channelObj)
+    const channelObj = this.lockChannels[channelIndex]
+    this.removeAllLocks(notificationSocket, channelObj)
     if (channelObj.clients.size === 0) {
-      lockChannels.splice(i, 1)
-      i--
+      this.lockChannels.splice(channelIndex, 1)
+    }
+  }
+
+  public onClose (notificationSocket: NotificationSocket) {
+    for (let i = 0; i < this.lockChannels.length; i++) {
+      const channelObj = this.lockChannels[i]
+      if (channelObj.filter !== notificationSocket.filter) continue
+
+      this.removeAllLocks(notificationSocket, channelObj)
+      if (channelObj.clients.size === 0) {
+        this.lockChannels.splice(i, 1)
+        i--
+      }
+    }
+  }
+
+  public get methods () {
+    return {
+      lock: this.lock,
+      unlock: this.unlock,
+      getLocks: this.getLocks,
+      leaveLocks: this.leaveLocks
     }
   }
 }
 
-const rpcObject = {
-  methods: {
-    lock, unlock, getLocks, leaveLocks
-  },
-  onClose
-}
-
-export default rpcObject
+export default RpcLockManager

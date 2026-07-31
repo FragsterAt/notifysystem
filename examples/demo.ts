@@ -1,8 +1,8 @@
 import * as dotenv from 'dotenv'
 
 import { authorize } from '@/lib/authorize.js'
-import { createServer } from '@/lib/server.js'
-import locksRPC from '@/lib/locks.js'
+import { ServerResponse } from 'http'
+import { createServer, RpcLockManager } from '@/index'
 dotenv.config()
 
 const stats = {
@@ -25,12 +25,13 @@ function onRequest (request) {
   stats.requests[method]++
 }
 
-function statusResponse (response) {
+function statusResponse (response: ServerResponse) {
   const status = { status: 'OK', stats: getStats() }
   response.writeHead(200, { 'Content-Type': 'application/json' })
   response.end(JSON.stringify(status))
 }
 
-const server = createServer({ authorize, statusResponse, onRequest, onMessage, rpcObjects: [locksRPC] })
+const lockManager = new RpcLockManager()
+const server = createServer({ authorize, statusResponse, onRequest, onMessage, rpcObjects: [lockManager] })
 
 server.start(process.env.PORT)

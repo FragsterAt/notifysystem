@@ -1,3 +1,2 @@
-import { createServer } from './lib/server.js'
-
-module.exports = createServer
+export { createServer } from './lib/server.js'
+export { default as RpcLockManager } from './lib/locks.js'

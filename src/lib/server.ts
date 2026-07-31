@@ -1,11 +1,11 @@
 import { WebSocketServer } from 'ws'
-import { createServer as createHttpServer, IncomingMessage, OutgoingMessage, ServerResponse } from 'http'
+import { createServer as createHttpServer, IncomingMessage, ServerResponse } from 'http'
 
 import { execJsonRpc, getRequestBody } from './support.js'
 import { uniqueId } from 'lodash-es'
-import { RequestListenerOptions, NotificationChannel, NotificationSocket } from './index.js'
+import { NotificationSocket } from './notificationSocket.js'
 
-function requestListener ({ authorize, statusResponse, onRequest, onQuit }: RequestListenerOptions)  {
+function requestListener ({ authorize, statusResponse, onRequest }: RequestListenerOptions) {
   return async function (request: IncomingMessage, response: ServerResponse) {
     const authorized = await authorize(request)
     console.log('request', authorized)
@@ -17,11 +17,11 @@ function requestListener ({ authorize, statusResponse, onRequest, onQuit }: Requ
 
     const { method } = request
     try {
-      onRequest(request)
+      onRequest?.(request)
     } catch (error) {
       console.error(error)
       response.writeHead(500, { 'Content-Type': 'text/plain' })
-      response.end(error.message)
+      response.end(error instanceof Error ? error.message : String(error))
     }
 
     if (method === 'GET') {
@@ -32,20 +32,20 @@ function requestListener ({ authorize, statusResponse, onRequest, onQuit }: Requ
   }
 }
 
-const waitParams = new Set()
+const waitParams = new Set<NotificationSocket>()
 const channels: NotificationChannel[] = []
-let pending: { type: string, channel: string, data: any, till: number }[] = []
+let pending: NotificationPendingMessage[] = []
 
-function subscribe (ws: NotificationSocket, channel: string) {
-  const { filter } = ws
+function subscribe (notificationSocket: NotificationSocket, channel: string) {
+  const { filter } = notificationSocket
   let channelObj = channels.find(el => el.channel === channel && el.filter === filter)
   if (!channelObj) {
     channelObj = { channel, filter, clients: new Set() }
     channels.push(channelObj)
   }
-  channelObj.clients.add(ws)
+  channelObj.clients.add(notificationSocket)
   // console.log(new Date(), 'join', channel, filter, channelObj.clients.size)
-  ws.channels.add(channel)
+  notificationSocket.channels.add(channel)
 
   const pendingMessages = pending.filter(el => el.channel === channel)
   if (pendingMessages.length) {
@@ -59,29 +59,29 @@ function subscribe (ws: NotificationSocket, channel: string) {
   }
 }
 
-function unsubscribe (ws: NotificationSocket, channel: string) {
-  const channelIndex = channels.findIndex(el => el.channel === channel && el.filter === ws.filter)
+function unsubscribe (notificationSocket: NotificationSocket, channel: string) {
+  const channelIndex = channels.findIndex(el => el.channel === channel && el.filter === notificationSocket.filter)
   if (channelIndex === -1) {
     return
   }
   const channelObj = channels[channelIndex]
-  channelObj.clients.delete(ws)
-  ws.channels.delete(channel)
+  channelObj.clients.delete(notificationSocket)
+  notificationSocket.channels.delete(channel)
   if (channelObj.clients.size === 0) { channels.splice(channelIndex, 1) }
 }
 
-export function broadcast (filter: string, { type, channel = null, data, timeout = null, self = true }, ws) {
+export function broadcast (filter: string, { type, channel = null, data, timeout = null, self = true }: DataMessage, sourceSocket: NotificationSocket | undefined = undefined) {
   const channelObj = channels.find(el => el.channel === (channel ?? `broadcast_${filter}`) && el.filter === filter)
   // console.log('broadcast', filter, type, channel, data, channelObj)
   // console.log(new Date(), 'broadcast', channelObj?.clients?.size, { filter, type, channel, data })
   // console.log(channel, filter, channelObj)
   if (!channelObj) {
-    if (timeout) pending.push({ type, channel, data, till: Date.now() + timeout * 1000 })
+    if (timeout) pending.push({ type, channel, data, till: Date.now() + timeout * 1000, self })
     return
   }
   channelObj.clients.forEach(client => {
-    if (self || client !== ws) {
-      client.send(JSON.stringify({ type, channel, data, client: ws?.client, session: ws?.session }))
+    if (self || client !== sourceSocket) {
+      client.send(JSON.stringify({ type, channel, data, client: sourceSocket?.client, session: sourceSocket?.session }))
     }
   })
 }
@@ -91,12 +91,12 @@ function clearPendingMessages () {
   pending = pending.filter(i => i.till > now)
 }
 
-async function processPostMessage (request, response) {
+async function processPostMessage (request: IncomingMessage, response: ServerResponse) {
   let requestBody
   try {
     requestBody = await getRequestBody(request)
     // console.log(new Date(), 'post', requestBody)
-    const { params, messages } = JSON.parse(requestBody)
+    const { params, messages } = JSON.parse(requestBody) as { params: { filter: string }, messages: NotificationMessage[] }
 
     // console.log(new Date(), 'post params', params)
     messages.forEach(msg => {
@@ -122,11 +122,19 @@ async function processPostMessage (request, response) {
   } catch (error) {
     console.error(error, requestBody)
     response.writeHead(500)
-    response.end(error.message)
+    response.end(error instanceof Error ? error.message : String(error))
   }
 }
 
-export function createServer ({ authorize, statusResponse, onConnection, onRequest, onMessage, onClose, rpcObjects = [] }) {
+export function createServer ({ authorize, statusResponse, onConnection, onRequest, onMessage, onClose, rpcObjects = [] }: {
+  authorize: (request: IncomingMessage) => Promise<boolean>,
+  statusResponse: (response: ServerResponse) => void,
+  onConnection?: ((notificationSocket: NotificationSocket) => void),
+  onRequest?: ((request: IncomingMessage) => void),
+  onMessage?: ((msg: NotificationMessage) => void),
+  onClose?: ((notificationSocket: NotificationSocket) => void),
+  rpcObjects: NotificationRPCObject[]
+}) {
   const server = createHttpServer(requestListener({ authorize, statusResponse, onRequest }))
   const wss = new WebSocketServer({ noServer: true })
 
@@ -144,18 +152,19 @@ export function createServer ({ authorize, statusResponse, onConnection, onReque
 
   wss.on('connection', function connection (ws) {
     // console.log(new Date(), 'ws', 'connection')
-    waitParams.add(ws)
-    ws.filter = undefined
+    const notificationSocket = new NotificationSocket(ws)
+    waitParams.add(notificationSocket)
 
-    onConnection?.(ws)
+    onConnection?.(notificationSocket)
 
     ws.on('message', function incoming (message) {
-      let msg
+      let msg: NotificationMessage
       try {
-        msg = JSON.parse(message)
+        const text = message.toString()
+        msg = JSON.parse(text) as NotificationMessage
       } catch (error) {
         console.error(error, message)
-        ws.send(JSON.stringify({ type: 'error', data: 'Cant parse message' }))
+        notificationSocket.sendError('Cant parse message')
         return
       }
       // console.log(new Date(), 'ws', msg.type, msg)
@@ -164,95 +173,90 @@ export function createServer ({ authorize, statusResponse, onConnection, onReque
         onMessage?.(msg)
       } catch (error) {
         console.error(error, message)
-        ws.send(JSON.stringify({ type: 'error', data: 'onMessage handler error', error }))
+        notificationSocket.sendError('onMessage handler error')
         return
       }
 
       try {
         if (msg.type === 'params') {
-          if (!waitParams.has(ws)) {
-            ws.send(JSON.stringify({ type: 'error', data: 'params already set' }))
+          if (!waitParams.has(notificationSocket)) {
+            notificationSocket.sendError('params already set')
             return
           }
         } else {
-          if (waitParams.has(ws)) {
-            ws.send(JSON.stringify({ type: 'error', data: 'wait for params' }))
+          if (waitParams.has(notificationSocket)) {
+            notificationSocket.sendError('wait for params')
             return
           }
         }
 
-        if (msg.jsonrpc) {
-          execJsonRpc(ws, rpcObjects, msg)
-        } else {
-          switch (msg.type) {
-            case 'params':
-              waitParams.delete(ws)
-              ws.filter = msg.data.filter
-              ws.session = msg.data.session ?? uniqueId()
-              ws.client = msg.data.client
-              ws.broadcastChannel = `broadcast_${msg.data.broadcastFilter ?? msg.data.filter}`
-              ws.channels = new Set()
-              // ws.listenBroadcast = msg.listenBroadcast === undefined ? true : !!msg.listenBroadcast
-              ws.listenBroadcast = msg.data.listenBroadcast ?? true
-              if (ws.listenBroadcast) { subscribe(ws, ws.broadcastChannel) }
-              ws.send(JSON.stringify({ type: 'ready', session: ws.session }))
-              // wss.clients.forEach(ws => console.log('filter', ws.filter))
-              break
+        switch (msg.type) {
+          case 'params':
+            waitParams.delete(notificationSocket)
+            notificationSocket.filter = msg.data.filter
+            notificationSocket.session = msg.data.session ?? uniqueId()
+            notificationSocket.client = msg.data.client
+            notificationSocket.broadcastChannel = `broadcast_${msg.data.broadcastFilter ?? msg.data.filter}`
+            notificationSocket.listenBroadcast = msg.data.listenBroadcast ?? true
+            if (notificationSocket.listenBroadcast) { subscribe(notificationSocket, notificationSocket.broadcastChannel) }
+            notificationSocket.send({ type: 'ready', session: notificationSocket.session })
+            break
 
-            case 'message':
-              broadcast(ws.filter, msg, ws)
-              break
-            case 'broadcast-message':
-            case 'notify-changed':
-            case 'notify-type-changed':
-            case 'notify':
-            case 'navigation-link':
-            case 'user-alert':
-              broadcast(ws.filter, { ...msg, channel: ws.broadcastChannel }, ws)
-              break
+          case 'message':
+            broadcast(notificationSocket.filter, msg, notificationSocket)
+            break
+          case 'broadcast-message':
+          case 'notify-changed':
+          case 'notify-type-changed':
+          case 'notify':
+          case 'navigation-link':
+          case 'user-alert':
+            broadcast(notificationSocket.filter, { ...msg, channel: notificationSocket.broadcastChannel }, notificationSocket)
+            break
 
-            case 'join':
-              subscribe(ws, msg.channel)
-              break
-            case 'leave':
-              unsubscribe(ws, msg.channel)
-              break
+          case 'join':
+            subscribe(notificationSocket, msg.channel)
+            break
+          case 'leave':
+            unsubscribe(notificationSocket, msg.channel)
+            break
 
-            default:
-              break
-          }
+          case 'rpc':
+            execJsonRpc(notificationSocket, rpcObjects, msg)
+            break
+
+          default:
+            break
         }
       } catch (error) {
         console.error(error, message)
-        ws.send(JSON.stringify({ type: 'error', data: 'Wrong message format' }))
+        notificationSocket.sendError('Wrong message format')
       }
     })
 
     ws.on('close', function () {
-      // console.log(new Date(), 'ws', 'close')
-      waitParams.delete(ws)
-      ws?.channels?.forEach(channel => unsubscribe(ws, channel))
+      waitParams.delete(notificationSocket)
+      notificationSocket?.channels?.forEach(channel => unsubscribe(notificationSocket, channel))
       rpcObjects.forEach(({ onClose }) => {
         try {
-          onClose?.(ws)
+          onClose?.(notificationSocket)
         } catch (error) {
           console.error(error)
         }
       })
-      // ChannelManager.unsubscribeClient(ws)
-      onClose?.(ws)
+      onClose?.(notificationSocket)
     })
 
-    ws.send(JSON.stringify({ type: 'waitParams', data: 'wait for params' }))
+    notificationSocket.send({ type: 'waitParams', data: 'wait for params' })
   })
 
-  let pendingFilterInterval
+  let pendingFilterInterval: NodeJS.Timeout
 
   /**
    *
    * @param {Number} port порт, по умолчанию 7196 (0x1c1c)
    */
-  function start (port = 0x1c1c) {
+  function start (port: number = 0x1c1c) {
     server.listen(port)
     pendingFilterInterval = setInterval(clearPendingMessages, 1000)
   }
