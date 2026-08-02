@@ -1,5 +1,6 @@
 import { IncomingMessage } from "http"
 import { NotificationSocket } from "./notificationSocket.js"
+import stringify from "fast-json-stable-stringify"
 
 export function getRequestBody (request: IncomingMessage): Promise<string> {
   return new Promise(function (resolve, reject) {
@@ -21,7 +22,7 @@ export async function execJsonRpc (notificationSocket: NotificationSocket, rpcOb
       notificationSocket.send({ jsonrpc: '2.0', error: { code: 404, message: 'Namespace Not Found' }, id: msg.id })
       return
     }
-    if (!rpcObject.methods[msg.method]) {
+    if (typeof rpcObject.methods[msg.method] !== 'function') {
       notificationSocket.send({ jsonrpc: '2.0', error: { code: 405, message: 'Method Not Allowed' }, id: msg.id })
       return
     }
@@ -33,3 +34,11 @@ export async function execJsonRpc (notificationSocket: NotificationSocket, rpcOb
     notificationSocket.send({ jsonrpc: '2.0', error, id: msg.id })
   }
 }
+
+export function getChannelKey(filter: string, channel: string) {
+  return `${filter}:${channel}`
+}
+export function getClientKey(filter: string, client: unknown) {
+  return stringify({filter, client})
+}
+

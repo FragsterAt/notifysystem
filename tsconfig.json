@@ -5,13 +5,14 @@
     "moduleResolution": "NodeNext",
     "strict": true,
     "declaration": true,
+    "declarationMap": true,
     "sourceMap": true,
     "outDir": "dist",
     "rootDir": "src",
     "esModuleInterop": true,
     "skipLibCheck": true,
     "types": [
-      "node"  
+      "node"
     ],
     "paths": {
       "@/*": [

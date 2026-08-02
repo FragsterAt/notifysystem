@@ -65,7 +65,7 @@ interface NotificationTypeJsonRPC {
   type: 'rpc'
   id?: string | number | null
   method: string
-  params: unknown
+  params: Record<string, unknown>
 }
 
 type BaseMessage = {
@@ -80,13 +80,20 @@ type RpcMessage = BaseMessage & (NotificationTypeJsonRPC)
 
 type NotificationPendingMessage = {
   type: string
+  filter: string
   channel: string | null
   data: unknown
   till: number
   self: ?boolean
 }
 
+type NotificationRPCMethod<P, R> = (socket: NotificationSocket, params?: P) => R
+
+interface NotificationRPCMethods {
+  [key: string]: NotificationRPCMethod
+}
+
 interface NotificationRPCObject {
-  methods: Record<string, (socket: NotificationSocket, params: Record?) => unknown>
+  methods: NotificationRPCMethods
   onClose: (notificationSocket: NotificationSocket) => void
 }

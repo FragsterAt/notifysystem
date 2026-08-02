@@ -58,7 +58,7 @@ class RpcLockManager implements NotificationRPCObject {
     })
   }
 
-  lock (notificationSocket: NotificationSocket, { channel, resource, type }: LockParams) {
+  private lock = (notificationSocket: NotificationSocket, { channel, resource, type }: LockParams) => {
     let channelIndex = this.lockChannels.findIndex(lc => lc.filter === notificationSocket.filter && lc.channel === channel)
     if (channelIndex === -1) {
       channelIndex = this.lockChannels.length
@@ -88,7 +88,7 @@ class RpcLockManager implements NotificationRPCObject {
     this.broadcast(notificationSocket.filter, { channel, data: { action: 'lock', type, resource, client: notificationSocket.client, session: notificationSocket.session } }, notificationSocket)
     return { type, resource, client: notificationSocket.client, session: notificationSocket.session }
   }
-  unlock (notificationSocket: NotificationSocket, { channel, resource }: UnlockParams) {
+  private unlock = (notificationSocket: NotificationSocket, { channel, resource }: UnlockParams) => {
     const channelIndex = this.lockChannels.findIndex(lc => lc.filter === notificationSocket.filter && lc.channel === channel)
     if (channelIndex === -1) return
     const channelObj = this.lockChannels[channelIndex]
@@ -100,7 +100,7 @@ class RpcLockManager implements NotificationRPCObject {
     }
   }
 
-  getLocks (notificationSocket: NotificationSocket, channel: string) {
+  private getLocks = (notificationSocket: NotificationSocket, channel: string) => {
     let channelIndex = this.lockChannels.findIndex(lc => lc.filter === notificationSocket.filter && lc.channel === channel)
     if (channelIndex === -1) {
       channelIndex = this.lockChannels.length
@@ -114,7 +114,7 @@ class RpcLockManager implements NotificationRPCObject {
   }
 
   // Снимает все блокировки notificationSocket из канала
-  removeAllLocks (notificationSocket: NotificationSocket, { channel, resources, clients }: LockChannel) {
+  private removeAllLocks = (notificationSocket: NotificationSocket, { channel, resources, clients }: LockChannel) => {
     for (let ri = 0; ri < resources.length; ri++) {
       if (resources[ri].notificationSocket === notificationSocket) {
         const [{ resource }] = resources.splice(ri, 1)
@@ -125,7 +125,7 @@ class RpcLockManager implements NotificationRPCObject {
     clients.delete(notificationSocket)
   }
 
-  leaveLocks (notificationSocket: NotificationSocket, channel: string) {
+  private leaveLocks = (notificationSocket: NotificationSocket, channel: string) => {
     const channelIndex = this.lockChannels.findIndex(lc => lc.filter === notificationSocket.filter && lc.channel === channel)
     if (channelIndex === -1) {
       return
@@ -151,14 +151,12 @@ class RpcLockManager implements NotificationRPCObject {
     }
   }
 
-  public get methods () {
-    return {
-      lock: this.lock,
-      unlock: this.unlock,
-      getLocks: this.getLocks,
-      leaveLocks: this.leaveLocks
-    }
+  methods: NotificationRPCMethods = {
+    lock: this.lock,
+    unlock: this.unlock,
+    getLocks: this.getLocks
   }
+
 }
 
 export default RpcLockManager

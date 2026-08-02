@@ -1,7 +1,7 @@
 import { WebSocketServer } from 'ws'
 import { createServer as createHttpServer, IncomingMessage, ServerResponse } from 'http'
 
-import { execJsonRpc, getRequestBody } from './support.js'
+import { execJsonRpc, getChannelKey, getClientKey, getRequestBody } from './support.js'
 import { uniqueId } from 'lodash-es'
 import { NotificationSocket } from './notificationSocket.js'
 
@@ -33,52 +33,56 @@ function requestListener ({ authorize, statusResponse, onRequest }: RequestListe
 }
 
 const waitParams = new Set<NotificationSocket>()
-const channels: NotificationChannel[] = []
+const channels: Map<string, Set<NotificationSocket>> = new Map()
+const clients = new Map<string, number>()
 let pending: NotificationPendingMessage[] = []
 
 function subscribe (notificationSocket: NotificationSocket, channel: string) {
   const { filter } = notificationSocket
-  let channelObj = channels.find(el => el.channel === channel && el.filter === filter)
+  let channelObj = channels.get(getChannelKey(filter, channel))
   if (!channelObj) {
-    channelObj = { channel, filter, clients: new Set() }
-    channels.push(channelObj)
+    channelObj = new Set()
+    channels.set(getChannelKey(filter, channel), channelObj)
   }
-  channelObj.clients.add(notificationSocket)
-  // console.log(new Date(), 'join', channel, filter, channelObj.clients.size)
+  channelObj.add(notificationSocket)
   notificationSocket.channels.add(channel)
 
-  const pendingMessages = pending.filter(el => el.channel === channel)
+  const pendingMessages = pending.filter(el => el.channel === channel && el.filter === filter)
   if (pendingMessages.length) {
     pendingMessages.forEach(el => {
-      channelObj.clients.forEach(client => {
+      channelObj.forEach(client => {
         const { type, channel, data } = el
         client.send(JSON.stringify({ type, channel, data }))
       })
     })
-    pending = pending.filter(el => el.channel !== channel)
+    pending = pending.filter(el => el.channel !== channel && el.filter !== filter)
   }
 }
 
 function unsubscribe (notificationSocket: NotificationSocket, channel: string) {
-  const channelIndex = channels.findIndex(el => el.channel === channel && el.filter === notificationSocket.filter)
-  if (channelIndex === -1) {
+  const { filter } = notificationSocket
+  const channelKeyStr = getChannelKey(filter, channel)
+  const channelObj = channels.get(channelKeyStr)
+  if (!channelObj) {
     return
   }
-  const channelObj = channels[channelIndex]
-  channelObj.clients.delete(notificationSocket)
+  channelObj.delete(notificationSocket)
   notificationSocket.channels.delete(channel)
-  if (channelObj.clients.size === 0) { channels.splice(channelIndex, 1) }
+  if (channelObj.size === 0) {
+    channels.delete(channelKeyStr)
+  }
 }
 
 export function broadcast (filter: string, { type, channel = null, data, timeout = null, self = true }: DataMessage, sourceSocket: NotificationSocket | undefined = undefined) {
-  const channelObj = channels.find(el => el.channel === (channel ?? `broadcast_${filter}`) && el.filter === filter)
+  const channelKeyStr  = getChannelKey(filter, channel ?? `broadcast_${filter}`)
+  const channelObj = channels.get(channelKeyStr)
   if (!channelObj) {
-    if (timeout) pending.push({ type, channel, data, till: Date.now() + timeout * 1000, self })
+    if (timeout) pending.push({ type, filter, channel, data, till: Date.now() + timeout * 1000, self })
     return
   }
-  channelObj.clients.forEach(client => {
+  channelObj.forEach(client => {
     if (self || client !== sourceSocket) {
-      client.send(JSON.stringify({ type, channel, data, client: sourceSocket?.client, session: sourceSocket?.session }))
+      client.send({ type, channel, data, client: sourceSocket?.client, session: sourceSocket?.session })
     }
   })
 }
@@ -123,17 +127,18 @@ async function processPostMessage (request: IncomingMessage, response: ServerRes
   }
 }
 
-export function createServer ({ authorize, statusResponse, onConnection, onRequest, onMessage, onClose, rpcObjects }: {
+export function createServer ({ authorize, statusResponse, onConnection, onRequest, onMessage, onClose }: {
   authorize: (request: IncomingMessage) => Promise<boolean>,
   statusResponse: (response: ServerResponse) => void,
   onConnection?: ((notificationSocket: NotificationSocket) => void),
   onRequest?: ((request: IncomingMessage) => void),
   onMessage?: ((msg: NotificationMessage) => void),
-  onClose?: ((notificationSocket: NotificationSocket) => void),
-  rpcObjects?: Record<string, NotificationRPCObject>
+  onClose?: ((notificationSocket: NotificationSocket) => void)
 }) {
   const server = createHttpServer(requestListener({ authorize, statusResponse, onRequest }))
   const wss = new WebSocketServer({ noServer: true })
+  const rpcObjects: Record<string, NotificationRPCObject> = {}
+
 
   server.on('upgrade', async (request, socket, head) => {
     const authorized = await authorize(request)
@@ -148,7 +153,6 @@ export function createServer ({ authorize, statusResponse, onConnection, onReque
   })
 
   wss.on('connection', function connection (ws) {
-    // console.log(new Date(), 'ws', 'connection')
     const notificationSocket = new NotificationSocket(ws)
     waitParams.add(notificationSocket)
 
@@ -197,6 +201,9 @@ export function createServer ({ authorize, statusResponse, onConnection, onReque
             notificationSocket.listenBroadcast = msg.data.listenBroadcast ?? true
             if (notificationSocket.listenBroadcast) { subscribe(notificationSocket, notificationSocket.broadcastChannel) }
             notificationSocket.send({ type: 'ready', session: notificationSocket.session })
+
+            const clientKey = getClientKey(notificationSocket.filter, notificationSocket.client)
+            clients.set(clientKey, (clients.get(clientKey) ?? 0) + 1)
             break
 
           case 'message':
@@ -241,6 +248,11 @@ export function createServer ({ authorize, statusResponse, onConnection, onReque
           console.error(error)
         }
       })
+      const clientKey = getClientKey(notificationSocket.filter, notificationSocket.client)
+      clients.set(clientKey, (clients.get(clientKey) ?? 1) - 1)
+      if (clients.get(clientKey) === 0) {
+        clients.delete(clientKey)
+      }
       onClose?.(notificationSocket)
     })
 
@@ -266,10 +278,29 @@ export function createServer ({ authorize, statusResponse, onConnection, onReque
   function getStats () {
     return {
       clients: wss.clients.size,
-      channels: channels.length,
+      channels: channels.size,
       pending: pending.length
     }
   }
 
-  return { start, stop, getStats }
+  function isOnline({client, filter}: {client: unknown, filter: string}) {
+    const clientKey = getClientKey(filter, client)
+    return clients.has(clientKey)
+  }
+
+  function isJoinedChannel({client, filter, channel} : {
+    client: unknown
+    filter: string
+    channel: string
+  }) {
+    const channelObj = channels.get(getChannelKey(filter, channel))
+    if (!channelObj) return false
+    const clientKey = getClientKey(filter, client)
+    for (const socket of channelObj) {
+      if (clientKey === getClientKey(socket.filter, socket.client)) return true
+    }
+    return false
+  }
+
+  return { start, stop, getStats, rpcObjects, isOnline, isJoinedChannel }
 }

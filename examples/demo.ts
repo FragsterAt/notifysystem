@@ -31,8 +31,7 @@ function statusResponse (response: ServerResponse) {
   response.end(JSON.stringify(status))
 }
 
-const lockManager = new RpcLockManager()
-const rpcObjects = { [lockManager.namespace]: lockManager }
-const server = createServer({ authorize, statusResponse, onRequest, onMessage, rpcObjects })
+const server = createServer({ authorize, statusResponse, onRequest, onMessage })
 
+server.rpcObjects['locks'] = new RpcLockManager('locks')
 server.start(process.env.PORT)
