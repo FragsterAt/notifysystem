@@ -7,20 +7,20 @@ dotenv.config()
 
 const stats = {
   messages: 0,
-  messagesByType: {},
-  requests: {}
+  messagesByType: {} as Record<string, number>,
+  requests: {} as Record<string, number>
 }
 function getStats () {
   const serverStats = server.getStats()
   return { ...stats, ...serverStats }
 }
-function onMessage (msg) {
+function onMessage (msg : NotificationMessage) {
   stats.messages++
   if (stats.messagesByType[msg.type] === undefined) { stats.messagesByType[msg.type] = 0 }
   stats.messagesByType[msg.type]++
 }
-function onRequest (request) {
-  const { method } = request
+function onRequest (request : IncomingMessage) {
+  const { method = 'unknown' } = request
   if (stats.requests[method] === undefined) { stats.requests[method] = 0 }
   stats.requests[method]++
 }
@@ -32,6 +32,7 @@ function statusResponse (response: ServerResponse) {
 }
 
 const lockManager = new RpcLockManager()
-const server = createServer({ authorize, statusResponse, onRequest, onMessage, rpcObjects: [lockManager] })
+const rpcObjects = { [lockManager.namespace]: lockManager }
+const server = createServer({ authorize, statusResponse, onRequest, onMessage, rpcObjects })
 
 server.start(process.env.PORT)

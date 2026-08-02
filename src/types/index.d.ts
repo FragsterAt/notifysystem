@@ -63,7 +63,7 @@ interface NotificationTypeChannel {
 
 interface NotificationTypeJsonRPC {
   type: 'rpc'
-  id: string | number
+  id?: string | number | null
   method: string
   params: unknown
 }
@@ -73,7 +73,7 @@ type BaseMessage = {
   timeout: number | null
   self: ?booleanm,
 }
-type NotificationMessage = BaseMessage & (NotificationTypeJsonRPC | NotificationTypeParams | NotificationTypeCommon | NotificationTypeChannel | OneCMessage)
+type NotificationMessage = BaseMessage & (NotificationTypeJsonRPC | NotificationTypeParams | NotificationTypeCommon | NotificationTypeChannel | OneCMessage | NotificationTypeJsonRPCMessage)
 type DataMessage = BaseMessage & (NotificationTypeCommon | OneCMessage)
 type RpcMessage = BaseMessage & (NotificationTypeJsonRPC)
 
@@ -88,6 +88,5 @@ type NotificationPendingMessage = {
 
 interface NotificationRPCObject {
   methods: Record<string, (socket: NotificationSocket, params: Record?) => unknown>
-  namespace: string
   onClose: (notificationSocket: NotificationSocket) => void
 }

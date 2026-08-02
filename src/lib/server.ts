@@ -72,9 +72,6 @@ function unsubscribe (notificationSocket: NotificationSocket, channel: string) {
 
 export function broadcast (filter: string, { type, channel = null, data, timeout = null, self = true }: DataMessage, sourceSocket: NotificationSocket | undefined = undefined) {
   const channelObj = channels.find(el => el.channel === (channel ?? `broadcast_${filter}`) && el.filter === filter)
-  // console.log('broadcast', filter, type, channel, data, channelObj)
-  // console.log(new Date(), 'broadcast', channelObj?.clients?.size, { filter, type, channel, data })
-  // console.log(channel, filter, channelObj)
   if (!channelObj) {
     if (timeout) pending.push({ type, channel, data, till: Date.now() + timeout * 1000, self })
     return
@@ -126,14 +123,14 @@ async function processPostMessage (request: IncomingMessage, response: ServerRes
   }
 }
 
-export function createServer ({ authorize, statusResponse, onConnection, onRequest, onMessage, onClose, rpcObjects = [] }: {
+export function createServer ({ authorize, statusResponse, onConnection, onRequest, onMessage, onClose, rpcObjects }: {
   authorize: (request: IncomingMessage) => Promise<boolean>,
   statusResponse: (response: ServerResponse) => void,
   onConnection?: ((notificationSocket: NotificationSocket) => void),
   onRequest?: ((request: IncomingMessage) => void),
   onMessage?: ((msg: NotificationMessage) => void),
   onClose?: ((notificationSocket: NotificationSocket) => void),
-  rpcObjects: NotificationRPCObject[]
+  rpcObjects?: Record<string, NotificationRPCObject>
 }) {
   const server = createHttpServer(requestListener({ authorize, statusResponse, onRequest }))
   const wss = new WebSocketServer({ noServer: true })
@@ -222,7 +219,7 @@ export function createServer ({ authorize, statusResponse, onConnection, onReque
             break
 
           case 'rpc':
-            execJsonRpc(notificationSocket, rpcObjects, msg)
+            execJsonRpc(notificationSocket, rpcObjects ?? {}, msg)
             break
 
           default:
@@ -237,7 +234,7 @@ export function createServer ({ authorize, statusResponse, onConnection, onReque
     ws.on('close', function () {
       waitParams.delete(notificationSocket)
       notificationSocket?.channels?.forEach(channel => unsubscribe(notificationSocket, channel))
-      rpcObjects.forEach(({ onClose }) => {
+      Object.values(rpcObjects || {}).forEach(({ onClose }) => {
         try {
           onClose?.(notificationSocket)
         } catch (error) {
