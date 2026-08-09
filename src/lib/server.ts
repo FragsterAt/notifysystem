@@ -132,7 +132,7 @@ export function createServer ({ authorize, statusResponse, onConnection, onReque
   statusResponse: (response: ServerResponse) => void,
   onConnection?: ((notificationSocket: NotificationSocket) => void),
   onRequest?: ((request: IncomingMessage) => void),
-  onMessage?: ((msg: NotificationMessage) => void),
+  onMessage?: ((notificationSocket: NotificationSocket, msg: NotificationMessage) => void),
   onClose?: ((notificationSocket: NotificationSocket) => void)
 }) {
   const server = createHttpServer(requestListener({ authorize, statusResponse, onRequest }))
@@ -171,7 +171,7 @@ export function createServer ({ authorize, statusResponse, onConnection, onReque
       // console.log(new Date(), 'ws', msg.type, msg)
 
       try {
-        onMessage?.(msg)
+        onMessage?.(notificationSocket, msg)
       } catch (error) {
         console.error(error, message)
         notificationSocket.sendError('onMessage handler error')
