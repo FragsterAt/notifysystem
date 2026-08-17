@@ -19,19 +19,19 @@ export async function execJsonRpc (notificationSocket: NotificationSocket, rpcOb
     const namespace = msg.method.split('.')[0]    
     const rpcObject = rpcObjects[namespace]
     if (!rpcObject) {
-      notificationSocket.send({ jsonrpc: '2.0', error: { code: 404, message: 'Namespace Not Found' }, id: msg.id })
+      notificationSocket.send({ type: 'rpc-result', error: { code: 404, message: 'Namespace Not Found' }, id: msg.id })
       return
     }
     if (typeof rpcObject.methods[msg.method] !== 'function') {
-      notificationSocket.send({ jsonrpc: '2.0', error: { code: 405, message: 'Method Not Allowed' }, id: msg.id })
+      notificationSocket.send({ type: 'rpc-result', error: { code: 405, message: 'Method Not Allowed' }, id: msg.id })
       return
     }
-    const result = await rpcObject.methods[msg.method](notificationSocket, msg.params)
+    const result = await rpcObject.methods[msg.method](msg.params, notificationSocket)
     if (msg.id !== undefined && msg.id !== null) {
-      notificationSocket.send({ jsonrpc: '2.0', result, id: msg.id })
+      notificationSocket.send({ type: 'rpc-result', result, id: msg.id })
     }
   } catch (error) {
-    notificationSocket.send({ jsonrpc: '2.0', error, id: msg.id })
+    notificationSocket.send({ type: 'rpc-result', error, id: msg.id })
   }
 }
 
@@ -42,3 +42,6 @@ export function getClientKey(filter: string, client: unknown) {
   return stringify({filter, client})
 }
 
+export function defineRPCMethods<T extends Record<string, NotificationRPCMethod>>(methods: T): T {
+  return methods
+}

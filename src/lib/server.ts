@@ -96,7 +96,7 @@ async function processPostMessage (request: IncomingMessage, response: ServerRes
   let requestBody
   try {
     requestBody = await getRequestBody(request)
-    // console.log(new Date(), 'post', requestBody)
+    console.log(new Date(), 'post', requestBody)
     const { params, messages } = JSON.parse(requestBody) as { params: { filter: string }, messages: NotificationMessage[] }
 
     // console.log(new Date(), 'post params', params)
@@ -241,9 +241,9 @@ export function createServer ({ authorize, statusResponse, onConnection, onReque
     ws.on('close', function () {
       waitParams.delete(notificationSocket)
       notificationSocket?.channels?.forEach(channel => unsubscribe(notificationSocket, channel))
-      Object.values(rpcObjects || {}).forEach(({ onClose }) => {
+      Object.values(rpcObjects || {}).forEach((obj) => {
         try {
-          onClose?.(notificationSocket)
+          obj.onClose?.(notificationSocket)
         } catch (error) {
           console.error(error)
         }

@@ -34,7 +34,7 @@ export class ChatManager implements NotificationRPCObject {
     })
   }
 
-  join (notificationSocket: NotificationSocket, { channel }: { channel: string }) {
+  join =  ({ channel }: { channel: string }, notificationSocket: NotificationSocket) => {
     const { filter } = notificationSocket
     let channelObj = this.chatChannels.get(getChannelKey(filter, channel))
     if (!channelObj) {
@@ -49,7 +49,7 @@ export class ChatManager implements NotificationRPCObject {
     }
   }
 
-  leave (notificationSocket: NotificationSocket, { channel }: { channel: string }) {
+  leave =  ({ channel }: { channel: string },notificationSocket: NotificationSocket) => {
     const { filter } = notificationSocket
     const channelObj = this.chatChannels.get(getChannelKey(filter, channel))
     if (!channelObj) return
@@ -60,7 +60,7 @@ export class ChatManager implements NotificationRPCObject {
     this.broadcast(filter, { channel, data: { action: 'leave', client: notificationSocket.client } }, notificationSocket)
   }
 
-  setTypingStatus (notificationSocket: NotificationSocket, { channel, typing }: { channel: string, typing: boolean }) {
+  setTypingStatus ({ channel, typing }: { channel: string, typing: boolean }, notificationSocket: NotificationSocket) {
     const { filter } = notificationSocket
     const channelObj = this.chatChannels.get(getChannelKey(filter, channel))
     if (!channelObj) return
@@ -89,8 +89,8 @@ export class ChatManager implements NotificationRPCObject {
   }
 
   readonly methods: NotificationRPCMethods = {
-    join: this.join.bind(this),
-    leave: this.leave.bind(this),
-    setTypingStatus: this.setTypingStatus.bind(this),
+    join: this.join,
+    leave: this.leave,
+    setTypingStatus: this.setTypingStatus,
   }
 }

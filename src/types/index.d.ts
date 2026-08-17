@@ -1,5 +1,5 @@
 type IncomingMessage = import('node:http').IncomingMessage
-type NotificationSocket = import('@/lib/server.ts/notificationSocket').NotificationSocket
+type NotificationSocket = import('@/lib/notificationSocket.ts').NotificationSocket
 
 type RequestListenerOptions = {
   authorize: (IncomingMessage) => Promise<boolean> | boolean
@@ -65,7 +65,14 @@ interface NotificationTypeJsonRPC {
   type: 'rpc'
   id?: string | number | null
   method: string
-  params: Record<string, unknown>
+  params?: Record<string, unknown>
+}
+
+interface NotificationTypeJsonRPCResponse {
+  type: 'rpc-result'
+  id: string | number
+  error: {code: number?, message: string} | undefined
+  result: unknown | undefined
 }
 
 type BaseMessage = {
@@ -87,13 +94,11 @@ type NotificationPendingMessage = {
   self: ?boolean
 }
 
-type NotificationRPCMethod<P, R> = (socket: NotificationSocket, params?: P) => R
+type NotificationRPCMethod = (param: any, socket: NotificationSocket) => unknown
 
-interface NotificationRPCMethods {
-  [key: string]: NotificationRPCMethod
-}
+type NotificationRPCMethods = Record<string, NotificationRPCMethod>
 
 interface NotificationRPCObject {
   methods: NotificationRPCMethods
-  onClose: (notificationSocket: NotificationSocket) => void
+  onClose?: (socket: NotificationSocket) => void
 }
