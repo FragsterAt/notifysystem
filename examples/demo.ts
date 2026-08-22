@@ -30,6 +30,7 @@ declare namespace NodeJS {
     POST_KEY: string
     OTP_CHECK_URL: string
     DISCONNECT_URL: string
+    TOUCH_URL: string
   }
 }
 
@@ -98,3 +99,16 @@ server.rpcObjects['test'] = {
   }
 }
 server.start(process.env.PORT)
+
+setInterval(async () => {
+    await fetch(`${process.env.TOUCH_URL}`, {
+      method: 'POST', 
+      headers: {
+        'Accept': 'application/json',
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        sessions: [...server.sessions.keys()]
+      })
+    })
+}, 1000 * 60 * 5)

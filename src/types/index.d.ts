@@ -78,9 +78,11 @@ interface NotificationTypeJsonRPCResponse {
 type BaseMessage = {
   channel: string | null
   timeout: number | null
-  self: ?booleanm,
+  self: ?boolean,
+  session: ?string
 }
-type NotificationMessage = BaseMessage & (NotificationTypeJsonRPC | NotificationTypeParams | NotificationTypeCommon | NotificationTypeChannel | OneCMessage | NotificationTypeJsonRPCMessage)
+
+type NotificationMessage = BaseMessage & (NotificationTypeJsonRPC | NotificationTypeParams | NotificationTypeCommon | NotificationTypeChannel | OneCMessage | NotificationTypeJsonRPC)
 type DataMessage = BaseMessage & (NotificationTypeCommon | OneCMessage)
 type RpcMessage = BaseMessage & (NotificationTypeJsonRPC)
 

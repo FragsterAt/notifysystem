@@ -35,6 +35,7 @@ function requestListener ({ authorize, statusResponse, onRequest }: RequestListe
 const waitParams = new Set<NotificationSocket>()
 const channels: Map<string, Set<NotificationSocket>> = new Map()
 const clients = new Map<string, number>()
+const sessions = new Map<string, NotificationSocket>()
 let pending: NotificationPendingMessage[] = []
 
 function subscribe (notificationSocket: NotificationSocket, channel: string) {
@@ -73,7 +74,7 @@ function unsubscribe (notificationSocket: NotificationSocket, channel: string) {
   }
 }
 
-export function broadcast (filter: string, { type, channel = null, data, timeout = null, self = true }: DataMessage, sourceSocket: NotificationSocket | undefined = undefined) {
+export function broadcast (filter: string, { type, channel = null, data, timeout = null, self = true, session = null }: DataMessage, sourceSocket: NotificationSocket | undefined = undefined) {
   const channelKeyStr  = getChannelKey(filter, channel ?? `broadcast_${filter}`)
   const channelObj = channels.get(channelKeyStr)
   if (!channelObj) {
@@ -81,7 +82,7 @@ export function broadcast (filter: string, { type, channel = null, data, timeout
     return
   }
   channelObj.forEach(client => {
-    if (self || client !== sourceSocket) {
+    if ((self || client !== sourceSocket) && (!session || client.session === session)) {
       client.send({ type, channel, data, client: sourceSocket?.client, session: sourceSocket?.session })
     }
   })
@@ -201,7 +202,7 @@ export function createServer ({ authorize, statusResponse, onConnection, onReque
             notificationSocket.listenBroadcast = msg.data.listenBroadcast ?? true
             if (notificationSocket.listenBroadcast) { subscribe(notificationSocket, notificationSocket.broadcastChannel) }
             notificationSocket.send({ type: 'ready', session: notificationSocket.session })
-
+            sessions.set(notificationSocket.session, notificationSocket)
             const clientKey = getClientKey(notificationSocket.filter, notificationSocket.client)
             clients.set(clientKey, (clients.get(clientKey) ?? 0) + 1)
             break
@@ -240,6 +241,7 @@ export function createServer ({ authorize, statusResponse, onConnection, onReque
 
     ws.on('close', function () {
       waitParams.delete(notificationSocket)
+      sessions.delete(notificationSocket.session)
       notificationSocket?.channels?.forEach(channel => unsubscribe(notificationSocket, channel))
       Object.values(rpcObjects || {}).forEach((obj) => {
         try {
@@ -302,5 +304,5 @@ export function createServer ({ authorize, statusResponse, onConnection, onReque
     return false
   }
 
-  return { start, stop, getStats, rpcObjects, isOnline, isJoinedChannel }
+  return { start, stop, getStats, rpcObjects, isOnline, isJoinedChannel, sessions }
 }
