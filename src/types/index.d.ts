@@ -2,10 +2,17 @@ type IncomingMessage = import('node:http').IncomingMessage
 type NotificationSocket = import('@/lib/notificationSocket.ts').NotificationSocket
 
 type RequestListenerOptions = {
-  authorize: (IncomingMessage) => Promise<boolean> | boolean
+  authorize: (IncomingMessage) => Promise<AuthorizationResult> | AuthorizationResult
   statusResponse: (ServerResponse) => unknown
   onRequest: ((IncomingMessage) => Promise<void> | void) | undefined
 }
+
+type AuthorizationResult =
+  | boolean
+  | {
+    authorized: boolean
+    params?: NotificationTypeParamsData
+  }
 
 type NotificationChannel = {
   channel: string
@@ -13,15 +20,17 @@ type NotificationChannel = {
   clients: Set<NotificationSocket>
 }
 
+interface NotificationTypeParamsData {
+  filter: string
+  session?: string
+  client: unknown
+  broadcastFilter?: string
+  listenBroadcast?: boolean
+}
+
 interface NotificationTypeParams {
   type: 'params'
-  data: {
-    filter: string
-    session?: string
-    client: unknown
-    broadcastFilter?: string
-    listenBroadcast?: boolean
-  }
+  data: NotificationTypeParamsData
 }
 
 interface NotificationTypeCommon {
@@ -71,7 +80,7 @@ interface NotificationTypeJsonRPC {
 interface NotificationTypeJsonRPCResponse {
   type: 'rpc-result'
   id: string | number
-  error: {code: number?, message: string} | undefined
+  error: { code: number?, message: string } | undefined
   result: unknown | undefined
 }
 

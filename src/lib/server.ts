@@ -1,4 +1,4 @@
-import { WebSocketServer } from 'ws'
+import { WebSocketServer, WebSocket } from 'ws'
 import { createServer as createHttpServer, IncomingMessage, ServerResponse } from 'http'
 
 import { execJsonRpc, getChannelKey, getClientKey, getRequestBody } from './support.js'
@@ -7,8 +7,9 @@ import { NotificationSocket } from './notificationSocket.js'
 
 function requestListener ({ authorize, statusResponse, onRequest }: RequestListenerOptions) {
   return async function (request: IncomingMessage, response: ServerResponse) {
-    const authorized = await authorize(request)
-    console.log('request', authorized)
+    const result = await authorize(request)
+    const authorized = typeof result === 'boolean' ? result : result.authorized
+    const params = typeof result === 'boolean' ? undefined : result.params
     if (!authorized) {
       response.writeHead(401)
       response.end('401 Unauthorized')
@@ -27,7 +28,7 @@ function requestListener ({ authorize, statusResponse, onRequest }: RequestListe
     if (method === 'GET') {
       statusResponse(response)
     } else if (method === 'POST') {
-      processPostMessage(request, response)
+      processPostMessage(request, response, params)
     };
   }
 }
@@ -75,7 +76,7 @@ function unsubscribe (notificationSocket: NotificationSocket, channel: string) {
 }
 
 export function broadcast (filter: string, { type, channel = null, data, timeout = null, self = true, session = null }: DataMessage, sourceSocket: NotificationSocket | undefined = undefined) {
-  const channelKeyStr  = getChannelKey(filter, channel ?? `broadcast_${filter}`)
+  const channelKeyStr = getChannelKey(filter, channel ?? `broadcast_${filter}`)
   const channelObj = channels.get(channelKeyStr)
   if (!channelObj) {
     if (timeout) pending.push({ type, filter, channel, data, till: Date.now() + timeout * 1000, self })
@@ -93,7 +94,7 @@ function clearPendingMessages () {
   pending = pending.filter(i => i.till > now)
 }
 
-async function processPostMessage (request: IncomingMessage, response: ServerResponse) {
+async function processPostMessage (request: IncomingMessage, response: ServerResponse, authorizationParams: { filter: string } | undefined = undefined) {
   let requestBody
   try {
     requestBody = await getRequestBody(request)
@@ -112,7 +113,7 @@ async function processPostMessage (request: IncomingMessage, response: ServerRes
         case 'notify':
         case 'navigation-link':
         case 'user-alert':
-          broadcast(params.filter, msg)
+          broadcast(authorizationParams?.filter ?? params.filter, msg)
           break
       }
     })
@@ -129,7 +130,7 @@ async function processPostMessage (request: IncomingMessage, response: ServerRes
 }
 
 export function createServer ({ authorize, statusResponse, onConnection, onRequest, onMessage, onClose }: {
-  authorize: (request: IncomingMessage) => Promise<boolean>,
+  authorize: (request: IncomingMessage) => Promise<AuthorizationResult> | AuthorizationResult,
   statusResponse: (response: ServerResponse) => void,
   onConnection?: ((notificationSocket: NotificationSocket) => void),
   onRequest?: ((request: IncomingMessage) => void),
@@ -142,10 +143,12 @@ export function createServer ({ authorize, statusResponse, onConnection, onReque
 
 
   server.on('upgrade', async (request, socket, head) => {
-    const authorized = await authorize(request)
+    const result = await authorize(request)
+    const authorized = typeof result === 'boolean' ? result : result.authorized
+    const params = typeof result === 'boolean' ? undefined : result.params
     if (authorized) {
       wss.handleUpgrade(request, socket, head, ws => {
-        wss.emit('connection', ws, request, request)
+        wss.emit('connection', ws, request, params)
       })
     } else {
       socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n')
@@ -153,7 +156,7 @@ export function createServer ({ authorize, statusResponse, onConnection, onReque
     }
   })
 
-  wss.on('connection', function connection (ws) {
+  wss.on('connection', function connection (ws: WebSocket, request: IncomingMessage, params?: NotificationTypeParamsData) {
     const notificationSocket = new NotificationSocket(ws)
     waitParams.add(notificationSocket)
 
@@ -195,11 +198,11 @@ export function createServer ({ authorize, statusResponse, onConnection, onReque
         switch (msg.type) {
           case 'params':
             waitParams.delete(notificationSocket)
-            notificationSocket.filter = msg.data.filter
-            notificationSocket.session = msg.data.session ?? uniqueId()
-            notificationSocket.client = msg.data.client
-            notificationSocket.broadcastChannel = `broadcast_${msg.data.broadcastFilter ?? msg.data.filter}`
-            notificationSocket.listenBroadcast = msg.data.listenBroadcast ?? true
+            notificationSocket.filter = params ? params.filter : msg.data.filter
+            notificationSocket.session = (params ? params.session : msg.data.session) ?? uniqueId()
+            notificationSocket.client = params ? params.client : msg.data.client
+            notificationSocket.broadcastChannel = `broadcast_${(params ? params.broadcastFilter : msg.data.broadcastFilter) ?? notificationSocket.filter}`
+            notificationSocket.listenBroadcast = (params ? params.listenBroadcast : msg.data.listenBroadcast) ?? true
             if (notificationSocket.listenBroadcast) { subscribe(notificationSocket, notificationSocket.broadcastChannel) }
             notificationSocket.send({ type: 'ready', session: notificationSocket.session })
             sessions.set(notificationSocket.session, notificationSocket)
@@ -285,12 +288,12 @@ export function createServer ({ authorize, statusResponse, onConnection, onReque
     }
   }
 
-  function isOnline({client, filter}: {client: unknown, filter: string}) {
+  function isOnline ({ client, filter }: { client: unknown, filter: string }) {
     const clientKey = getClientKey(filter, client)
     return clients.has(clientKey)
   }
 
-  function isJoinedChannel({client, filter, channel} : {
+  function isJoinedChannel ({ client, filter, channel }: {
     client: unknown
     filter: string
     channel: string
