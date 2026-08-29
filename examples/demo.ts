@@ -110,7 +110,7 @@ server.rpcObjects['test'] = {
 server.start(process.env.PORT)
 
 setInterval(async () => {
-  await fetch(`${process.env.TOUCH_URL}`, {
+  await fetch(`${process.env.HEARTBEAT_URL}`, {
     method: 'POST',
     headers: {
       'Accept': 'application/json',
@@ -120,4 +120,4 @@ setInterval(async () => {
       sessions: [...server.sessions.keys()]
     })
   })
-}, 1000 * 60 * 5)
+}, 1000 * 60 * 1)
