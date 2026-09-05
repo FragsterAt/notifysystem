@@ -98,7 +98,7 @@ async function processPostMessage (request: IncomingMessage, response: ServerRes
   let requestBody
   try {
     requestBody = await getRequestBody(request)
-    console.log(new Date(), 'post', requestBody)
+    // console.log(new Date(), 'post', requestBody)
     const { params, messages } = JSON.parse(requestBody) as { params: { filter: string }, messages: NotificationMessage[] }
 
     // console.log(new Date(), 'post params', params)
@@ -143,7 +143,6 @@ export function createServer ({ authorize, statusResponse, onConnection, onReque
 
 
   server.on('upgrade', async (request, socket, head) => {
-    console.log('UPGRADE', request.url, request.headers)
     const result = await authorize(request)
     const authorized = typeof result === 'boolean' ? result : result.authorized
     const params = typeof result === 'boolean' ? undefined : result.params
