@@ -143,6 +143,7 @@ export function createServer ({ authorize, statusResponse, onConnection, onReque
 
 
   server.on('upgrade', async (request, socket, head) => {
+    console.log('UPGRADE', request.url, request.headers)
     const result = await authorize(request)
     const authorized = typeof result === 'boolean' ? result : result.authorized
     const params = typeof result === 'boolean' ? undefined : result.params
