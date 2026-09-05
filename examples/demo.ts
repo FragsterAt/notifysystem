@@ -36,6 +36,7 @@ declare namespace NodeJS {
 
 async function authorize (request: IncomingMessage) {
   try {
+    console.log('authorize', request.method, request.url, `http://${request.headers.host}`, request.headers, )
     if (request.method === 'POST') {
       const token = request.headers.authorization?.replace('Bearer ', '')
       return token === process.env.POST_KEY
